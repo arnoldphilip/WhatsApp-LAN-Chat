@@ -1,0 +1,5 @@
+node_modules/
+uploads/
+chat_data.json
+.DS_Store
+.env

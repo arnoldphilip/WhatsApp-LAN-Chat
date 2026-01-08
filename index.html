@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Secure Chat 2026</title>
+    <link rel="stylesheet" href="node_modules/cropperjs/dist/cropper.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container" id="chat-container">
+        <div class="header" id="title">
+            Secure Chat 2026
+            <div class="header-controls" style="display:flex; gap:10px;">
+                <button id="admin-toggle-btn"
+                    style="display:none; font-size:18px; padding:5px; background:rgba(255,255,255,0.2); border-radius:50%;"
+                    title="Admin Tools" onclick="toggleAdminPanel()">⚙️</button>
+            </div>
+        </div>
+
+        <!-- Admin Panel -->
+        <div id="admin-panel" class="req-box"
+            style="display:none; background:var(--input-bg); border-bottom:1px solid var(--secondary-text); padding:10px; animation: slideDown 0.3s ease;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0; font-size:16px;">Admin Controls</h3>
+                <button onclick="toggleAdminPanel()" style="font-size:12px; padding:2px 6px;">✖</button>
+            </div>
+
+            <div id="requests-section"
+                style="display:none; margin-top:10px; border-top:1px solid #ccc; padding-top:5px;">
+                <h4 style="margin:5px 0; font-size:14px; color:#25d366;">Pending Requests:</h4>
+                <div id="requests"></div>
+            </div>
+
+            <div id="admin-actions" style="margin-top:15px; text-align:right;">
+                <!-- End Session button will be here -->
+            </div>
+        </div>
+
+        <ul id="chat"></ul>
+        <div id="waiting" style="display:none; text-align:center; padding:10px;">⌛ Awaiting Admin...</div>
+
+        <!-- Login Screen Overlay -->
+        <div id="login-screen" class="container"
+            style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:100; justify-content:center; align-items:center; background:var(--bg-color);">
+            <div class="login-card"
+                style="width:100%; max-width:400px; padding:30px; background:var(--container-bg); border-radius:10px; box-shadow:0 10px 25px var(--shadow); text-align:center;">
+                <h2 style="color:var(--btn-primary); margin-bottom:20px;">Welcome to Secure Chat</h2>
+
+                <div style="margin-bottom:15px; position:relative;">
+                    <input id="login-name" placeholder="Enter your name"
+                        style="width:90%; border:1px solid #ccc; padding:12px;">
+                    <div id="name-error" style="color:red; font-size:12px; display:none; margin-top:5px;">Invalid name,
+                        give another name</div>
+                </div>
+
+                <div style="margin-bottom:20px;">
+                    <input id="login-msg" placeholder="Optional message for Admin"
+                        style="width:90%; border:1px solid #ccc; padding:12px;">
+                </div>
+
+                <button onclick="join()"
+                    style="width:95%; background:var(--btn-primary); color:white; padding:12px; border-radius:5px;">Enter
+                    Chat</button>
+            </div>
+        </div>
+
+        <!-- Admin Conflict Popup -->
+        <div id="conflict-popup" class="modal-content"
+            style="display:none; position:absolute; top:20px; right:20px; z-index:200; width:300px; background:var(--container-bg); border:2px solid red; animation: slideDown 0.3s;">
+            <h3 style="color:red; margin-top:0;">⚠️ Admin Login Attempt</h3>
+            <p>Another device is trying to log in as Admin.</p>
+            <div style="font-weight:bold; margin-bottom:10px;">Auto-logout in: <span id="conflict-timer">5</span>s</div>
+            <button onclick="refuseLogin()" style="background:red; color:white; width:100%;">REFUSE LOGIN</button>
+        </div>
+
+        <!-- Main Chat Container (Hidden behind login initially) -->
+        <!-- We keep the structure but 'login-area' inside it is no longer needed -->
+        <div class="input-area" id="msg-area" style="display:none;">
+            <!-- EMOJI BUTTON (😀) and FILE INPUT (📎) buttons are here -->
+            <button class="emoji-btn" onclick="toggleEmojiPicker()">😀</button>
+            <button onclick="document.getElementById('file-input').click()">📎</button>
+            <input type="file" id="file-input" hidden accept="image/*,video/*" onchange="sendFileHandler(this)">
+            <input id="msg" placeholder="Message or Emoji..." onkeydown="if(event.key==='Enter') send()">
+            <button onclick="send()">Send</button>
+        </div>
+    </div>
+
+    <!-- Drop area overlay for better UX during drag/drop -->
+    <div id="drop-area-overlay"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10; justify-content:center; align-items:center; color:white; font-size:24px; pointer-events:none;">
+        Drop files anywhere to upload
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Image Editor Modal -->
+    <div id="image-editor-modal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:20; flex-direction:column; align-items:center; justify-content:center;">
+        <div style="width:90%; height:70%; background:#333; margin-bottom:10px;">
+            <img id="image-preview" style="max-width:100%; max-height:100%;">
+        </div>
+        <div class="editor-controls" style="display:flex; gap:10px;">
+            <button onclick="cropImage()" style="background:#25d366; color:white;">Crop & Send</button>
+            <button onclick="sendOriginal()" style="background:#34b7f1; color:white;">Send Original</button>
+            <button onclick="cancelImage()" style="background:#ff4d4d; color:white;">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Password Modal -->
+    <div id="password-modal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:50; justify-content:center; align-items:center;">
+        <div class="modal-content">
+            <h3>Enter Admin Password</h3>
+            <input type="password" id="admin-password" placeholder="Password">
+            <button onclick="submitPassword()">Login</button>
+            <button onclick="closePasswordModal()" class="cancel-btn">Cancel</button>
+        </div>
+    </div>
+
+    <script src="node_modules/cropperjs/dist/cropper.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="chat.js"></script>
+</body>
+
+</html>
