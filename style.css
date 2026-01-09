@@ -1,3 +1,7 @@
+* {
+    box-sizing: border-box;
+}
+
 /* CSS Variables for Theme */
 :root {
     --bg-color: #e5ddd5;
@@ -71,32 +75,58 @@ body {
 
 @media (max-width: 768px) {
     .container {
-        height: 100%;
-        /* Fallback */
         height: 100dvh;
-        /* Dynamic viewport height for mobile browsers */
         width: 100%;
         max-width: none;
         border-radius: 0;
         box-shadow: none;
-        /* Flat on mobile */
+        overflow-x: hidden;
     }
 
     #chat {
-        /* Flex 1 handles height automatically, removed fixed calc */
         border-radius: 0;
+        padding: 10px;
+    }
+
+    #chat li {
+        max-width: 85%;
     }
 
     .header {
         padding: 10px 15px;
-        /* Slightly compact header */
+        font-size: 16px;
     }
 
-    /* Hide some potential overflow on mobile */
     body {
         align-items: flex-start;
-        /* Stick to top on mobile */
         height: 100dvh;
+        overflow-x: hidden;
+    }
+
+    .input-area {
+        padding: 8px 10px;
+        gap: 8px;
+        /* Slightly tighter for mobile */
+    }
+
+    input {
+        padding: 10px 12px;
+        font-size: 16px;
+        min-width: 0;
+        /* Ensures input can shrink in flexbox */
+    }
+
+    button[onclick="send()"] {
+        width: 44px;
+        /* Slightly compact for mobile */
+        height: 44px;
+        flex-shrink: 0;
+    }
+
+    button[onclick="send()"] svg {
+        width: 20px;
+        height: 20px;
+        margin-left: 2px;
     }
 }
 
@@ -215,6 +245,24 @@ body {
     color: white !important;
 }
 
+.logout-self-btn {
+    background: transparent !important;
+    border: 2px solid var(--btn-primary) !important;
+    color: var(--btn-primary) !important;
+    font-size: 14px !important;
+    font-weight: bold;
+    padding: 8px 16px !important;
+    border-radius: 20px !important;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: auto !important;
+}
+
+.logout-self-btn:hover {
+    background: var(--btn-primary) !important;
+    color: white !important;
+}
+
 .input-area {
     background: var(--container-bg);
     padding: 10px;
@@ -244,13 +292,19 @@ button {
     color: var(--secondary-text);
     border: none;
     cursor: pointer;
-    font-size: 20px;
-    padding: 8px;
+    font-size: 22px;
+    /* Increased for mobile */
+    padding: 10px;
+    /* Increased for touch */
     border-radius: 50%;
     transition: background 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
+    min-width: 44px;
+    /* Minimum tap target */
+    min-height: 44px;
+    /* Minimum tap target */
 }
 
 button:hover {
@@ -297,29 +351,50 @@ body.dark-mode .cancel-btn {
 button[onclick="send()"] {
     background: var(--btn-primary);
     color: white;
-    width: 45px;
-    height: 45px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    padding: 0;
+    flex-shrink: 0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+button[onclick="send()"] svg {
+    margin-left: 3px;
+    /* Subtle offset to center the arrow visually */
 }
 
 button[onclick="send()"]:hover {
     background: var(--btn-hover);
-    transform: scale(1.05);
+    transform: scale(1.08);
 }
 
 .emoji-picker {
     position: absolute;
     bottom: 70px;
-    left: 20px;
+    left: 10px;
+    right: 10px;
     background: var(--container-bg);
     border: 1px solid var(--secondary-text);
     border-radius: 8px;
     box-shadow: 0 4px 10px var(--shadow);
     padding: 10px;
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(35px, 1fr));
     gap: 5px;
     font-size: 24px;
     z-index: 10;
+    max-height: 250px;
+    overflow-y: auto;
+    width: auto;
+    max-width: 400px;
+}
+
+@media (min-width: 600px) {
+    .emoji-picker {
+        width: 350px;
+        right: auto;
+    }
 }
 
 .emoji-picker span {
@@ -396,4 +471,157 @@ button[onclick="send()"]:hover {
     background: var(--input-bg);
     color: var(--text-color);
     border: 1px solid var(--secondary-text);
+}
+
+/* Image Editor Modal Styles */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 100;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.editor-container {
+    width: 100%;
+    max-width: 800px;
+    flex: 1;
+    background: #111;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 8px;
+}
+
+.editor-container img {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+}
+
+.editor-controls {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    max-width: 800px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.editor-controls button {
+    flex: 1;
+    min-width: 120px;
+    border-radius: 8px !important;
+    font-weight: 500;
+    padding: 12px 10px !important;
+    font-size: 14px !important;
+}
+
+.primary-action {
+    background: #25d366 !important;
+    color: white !important;
+}
+
+.secondary-action {
+    background: #34b7f1 !important;
+    color: white !important;
+}
+
+.danger-action {
+    background: #ff4d4d !important;
+    color: white !important;
+}
+
+@media (max-width: 480px) {
+    .editor-controls {
+        flex-direction: column;
+    }
+
+    .editor-controls button {
+        width: 100%;
+    }
+}
+
+/* Logout Modal Refinements */
+#logout-options-container button {
+    width: 100%;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+#logout-modal .modal-content {
+    min-width: 300px;
+    max-width: 90%;
+}
+
+/* Context Menu Styling */
+.context-menu {
+    background: var(--container-bg);
+    border: 1px solid var(--secondary-text);
+    border-radius: 8px;
+    box-shadow: 0 4px 10px var(--shadow);
+    padding: 5px 0;
+    min-width: 160px;
+    z-index: 5000;
+}
+
+.context-menu-item {
+    padding: 10px 15px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-color);
+    transition: background 0.2s;
+}
+
+.context-menu-item:hover {
+    background: rgba(255, 77, 77, 0.1);
+    color: #ff4d4d;
+}
+
+/* Undo Toast Styling */
+.undo-toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #323232;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    z-index: 2000;
+    font-size: 14px;
+    animation: fadeIn 0.3s ease;
+}
+
+.undo-toast button {
+    background: transparent;
+    color: #25d366;
+    border: none;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0;
+    min-width: unset;
+    min-height: unset;
+}
+
+.undo-toast button:hover {
+    text-decoration: underline;
+    background: transparent;
 }

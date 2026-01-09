@@ -26,6 +26,16 @@ const passwordInput = document.getElementById("admin-password");
 const adminToggleBtn = document.getElementById("admin-toggle-btn");
 const requestsSection = document.getElementById("requests-section");
 const adminActions = document.getElementById("admin-actions");
+const logoutModal = document.getElementById("logout-modal");
+const adminLogoutOptions = document.getElementById("admin-logout-options");
+const contextMenu = document.getElementById("custom-context-menu");
+const deleteConfirmModal = document.getElementById("delete-confirm-modal");
+const undoToast = document.getElementById("undo-toast");
+
+// Deletion State
+let messageToDeleteId = null;
+let deletionTimeout = null;
+let pendingDeletions = new Map(); // Store full msg data for undo recovery
 
 // Mentions Logic
 let mentionPopup = document.createElement('div');
@@ -70,57 +80,16 @@ if (headerControls) {
 }
 
 function handleLogout() {
+    logoutModal.style.display = 'flex';
     if (isAdmin) {
-        // Simple Prompt for Admin
-        if (confirm("Logout Options:\nOK = Logout Yourself Only\nCancel = Logout Everyone (End Session)")) {
-            socket.emit('logout_self');
-            localStorage.clear();
-            location.reload();
-        } else {
-            // Check if user actually meant to cancel the whole action or pick option 2?
-            // Confirm returns false on Cancel.
-            // If they hit Cancel, we treat it as Option 2? RISKY.
-            // Better: Custom Modal or simple `prompt`: "Type '1' for Self, '2' for All".
-            // Or better: Use two buttons in a div?
-            // Let's use a simple approach: 
-            // 1. Click Logout -> Shows small popup with 2 buttons if Admin.
-            showLogoutMenu();
-        }
+        adminLogoutOptions.style.display = 'flex';
     } else {
-        if (confirm("Are you sure you want to logout?")) {
-            localStorage.clear();
-            location.reload();
-            // Server sees socket disconnect, logic handles it.
-            // But to be clean, maybe emit 'logout_self' too?
-            socket.emit('logout_self');
-        }
+        adminLogoutOptions.style.display = 'none';
     }
 }
 
-// Admin Logout Menu
-const logoutMenu = document.createElement('div');
-logoutMenu.className = 'logout-menu';
-logoutMenu.style.display = 'none';
-logoutMenu.style.position = 'absolute';
-logoutMenu.style.top = '50px';
-logoutMenu.style.right = '50px';
-logoutMenu.style.background = 'var(--container-bg)'; // Use theme var
-logoutMenu.style.border = '1px solid var(--secondary-text)';
-logoutMenu.style.padding = '10px';
-logoutMenu.style.zIndex = '100';
-logoutMenu.innerHTML = `
-    <button onclick="logoutSelf()" style="display:block; width:100%; text-align:left; font-size:14px; margin-bottom:5px;">Logout Self</button>
-    <button onclick="logoutAll()" style="display:block; width:100%; text-align:left; font-size:14px; color:red;">Logout Everyone</button>
-    <button onclick="closeLogoutMenu()" style="display:block; width:100%; text-align:center; font-size:12px; margin-top:5px; background:#ccc; color:black;">Cancel</button>
-`;
-document.body.appendChild(logoutMenu);
-
-function showLogoutMenu() {
-    logoutMenu.style.display = 'block';
-}
-
-window.closeLogoutMenu = function () {
-    logoutMenu.style.display = 'none';
+window.closeLogoutModal = function () {
+    logoutModal.style.display = 'none';
 }
 
 window.logoutSelf = function () {
@@ -130,7 +99,6 @@ window.logoutSelf = function () {
 }
 
 window.logoutAll = function () {
-    // Re-use End Session Logic
     if (confirm("Save chat history before ending?\nOK = Save & End\nCancel = Delete & End")) {
         socket.emit('end_session', 'save');
     } else {
@@ -215,7 +183,14 @@ socket.on('new_message', (msg) => {
 socket.on('message_deleted', (msgId) => {
     const li = document.getElementById(`msg-${msgId}`);
     if (li) {
-        li.innerHTML = `<span style="font-style:italic; color:#888;">🚫 This message was deleted by the sender</span>`;
+        li.innerHTML = `<div class="bubble"><span style="font-style:italic; color:#888;">🚫 This message was deleted by the sender</span></div>`;
+    }
+    // If this was our pending deletion, clean up state
+    if (messageToDeleteId === msgId) {
+        clearTimeout(deletionTimeout);
+        undoToast.style.display = 'none';
+        pendingDeletions.delete(msgId);
+        messageToDeleteId = null;
     }
 });
 
@@ -291,227 +266,25 @@ window.toggleAdminPanel = function () {
     adminPanel.style.display = adminPanel.style.display === 'none' ? 'block' : 'none';
 }
 
-// --- Login & Admin Secret Flow ---
-
-const loginScreen = document.getElementById('login-screen');
-const loginNameInput = document.getElementById('login-name');
-const loginMsgInput = document.getElementById('login-msg');
-const nameError = document.getElementById('name-error');
-
-let isAdminLogin = false;
-
-// 1. Shift + Enter Secret (Name Box)
-loginNameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.shiftKey) {
-        e.preventDefault();
-        if (loginNameInput.value.trim().toLowerCase() === 'admin') {
-            triggerAdminMode();
-        }
+function join() {
+    const name = document.getElementById('name').value.trim();
+    if (name) {
+        socket.emit('join_request', { name });
     }
-});
-
-// 2. Shift + Enter Secret (Password Box - Force Login)
-loginMsgInput.addEventListener('keydown', (e) => {
-    if (isAdminLogin && e.key === 'Enter' && e.shiftKey) {
-        e.preventDefault();
-        join(true); // true = force
-    } else if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault(); // Prevent newline in password/msg box if we want it to submit
-        join(false);
-    }
-});
-
-// 2. Blur / Focus 2nd Box Logic
-loginNameInput.addEventListener('blur', checkNameValidity);
-// Also check when user tries to interact with msg box
-loginMsgInput.addEventListener('focus', checkNameValidity);
-
-function checkNameValidity() {
-    const val = loginNameInput.value.trim().toLowerCase();
-
-    // If name is "admin" BUT we haven't activated admin mode (secret key)
-    if (val === 'admin' && !isAdminLogin) {
-        showNameError("Invalid name, give another name");
-        loginNameInput.value = ""; // Optional: Clear to force retry? Prompt says "Immediately say invalid name"
-    }
-    // We can't check duplicates locally without server ping, but server will reject. 
-    // Prompt says "same invalid name error must come if people inside... same name". 
-    // This implies we rely on server response 'error_message' to show this same UI.
 }
 
-function showNameError(msg) {
-    nameError.innerText = msg;
-    nameError.style.display = 'block';
-    // Shake animation? 
-    loginNameInput.style.borderColor = 'red';
-    setTimeout(() => {
-        nameError.style.display = 'none';
-        loginNameInput.style.borderColor = '#ccc';
-    }, 3000);
+function submitPassword() {
+    const name = document.getElementById('name').value.trim();
+    const pass = passwordInput.value.trim();
+    if (pass) {
+        socket.emit('join_request', { name, password: pass });
+    }
 }
 
-function triggerAdminMode() {
-    isAdminLogin = true;
-    loginMsgInput.type = 'password';
-    loginMsgInput.placeholder = "Enter password to enter as admin";
-    loginMsgInput.focus();
+function closePasswordModal() {
+    passwordModal.style.display = 'none';
+    passwordInput.value = '';
 }
-
-function join(force = false) {
-    const name = loginNameInput.value.trim();
-    if (!name) return;
-
-    // Final check before sending
-    if (name.toLowerCase() === 'admin' && !isAdminLogin) {
-        showNameError("Invalid name, give another name");
-        return;
-    }
-
-    const payload = {
-        name,
-        message: loginMsgInput.value.trim(),
-        force: force
-    };
-
-    if (isAdminLogin) {
-        payload.password = loginMsgInput.value.trim();
-        // Clear message for admin (it's password)
-        payload.message = "I am the Admin";
-    }
-
-    socket.emit('join_request', payload);
-}
-
-// --- Admin Conflict Logic ---
-const conflictPopup = document.getElementById('conflict-popup');
-const conflictTimer = document.getElementById('conflict-timer');
-let conflictInterval = null;
-
-socket.on('admin_conflict_alert', () => {
-    conflictPopup.style.display = 'block';
-    let timeLeft = 5;
-    conflictTimer.innerText = timeLeft;
-
-    if (conflictInterval) clearInterval(conflictInterval);
-    conflictInterval = setInterval(() => {
-        timeLeft--;
-        conflictTimer.innerText = timeLeft;
-        if (timeLeft <= 0) {
-            clearInterval(conflictInterval);
-            conflictPopup.style.display = 'none';
-            // Auto logout handled by server sending 'session_ended' or similar logic
-        }
-    }, 1000);
-});
-
-window.refuseLogin = function () {
-    clearInterval(conflictInterval);
-    conflictPopup.style.display = 'none';
-    socket.emit('admin_conflict_response', 'refuse');
-}
-
-socket.on('forced_logout', () => {
-    alert("You have been logged out because Admin logged in from another device.");
-    localStorage.clear();
-    location.reload();
-});
-
-
-// --- Socket Events Updates ---
-
-socket.on('login_success', (data) => {
-    currentUser = data.name;
-    isAdmin = data.isAdmin;
-
-    localStorage.setItem('chat_name', data.name);
-    localStorage.setItem('chat_token', data.token);
-
-    // Hide Login Screen
-    loginScreen.style.display = 'none';
-    waitingScreen.style.display = 'none';
-
-    // Show Chat UI logic
-    document.getElementById('msg-area').style.display = 'flex';
-    passwordModal.style.display = 'none'; // Legacy modal, just in case
-
-    if (isAdmin) {
-        adminToggleBtn.style.display = 'block';
-        addAdminControls();
-    }
-});
-
-socket.on('waiting_approval', () => {
-    loginScreen.style.display = 'none';
-    waitingScreen.style.display = 'block';
-});
-socket.on('waiting_approval_with_token', (token) => {
-    loginScreen.style.display = 'none';
-    waitingScreen.style.display = 'block';
-    localStorage.setItem('chat_name', loginNameInput.value.trim());
-    localStorage.setItem('chat_token', token);
-});
-
-socket.on('error_message', (msg) => {
-    // If we are on login screen, show it there
-    if (loginScreen.style.display !== 'none') {
-        showNameError(msg);
-    } else {
-        alert(msg);
-    }
-});
-
-socket.on('require_password', () => {
-    // Legacy support or if server asks. 
-    // Our new flow handles password in initial request.
-    // If logic falls back here, show old modal? 
-    // Better: alert "Password Required" if somehow failed?
-    // With new flow, this shouldn't trigger if we sent password correctly.
-    // But if we joined as "Admin" without password (manually bypassing UI check?), server asks.
-    // We can reuse the UI flow:
-    triggerAdminMode();
-    showNameError("Password required for Admin");
-});
-
-socket.on('update_requests', (requests) => {
-    if (!isAdmin) return;
-
-    requestsList.innerHTML = '';
-
-    if (requests.length > 0) {
-        adminPanel.style.display = 'block';
-        requestsSection.style.display = 'block';
-
-        requests.forEach(req => {
-            const div = document.createElement('div');
-            div.style.padding = '8px';
-            div.style.borderBottom = '1px solid #eee';
-            div.style.display = 'flex';
-            div.style.justifyContent = 'space-between';
-            div.style.alignItems = 'center';
-            // Show Message
-            const msgHtml = req.message ? `<div style="font-size:12px; color:#666; font-style:italic;">"${req.message}"</div>` : '';
-
-            div.innerHTML = `
-                <div>
-                    <span style="font-weight:500">${req.name}</span>
-                    ${msgHtml}
-                </div>
-                <div>
-                    <button onclick="approve('${req.name}')" style="background:#25d366; padding:4px 10px; font-size:14px; margin-right:5px;">✔</button>
-                    <button onclick="reject('${req.name}')" style="background:#ff4d4d; padding:4px 10px; font-size:14px;">✖</button>
-                </div>
-            `;
-            requestsList.appendChild(div);
-        });
-    } else {
-        requestsSection.style.display = 'none';
-        adminPanel.style.display = 'none';
-    }
-});
-
-// Remove old submitPassword / closePasswordModal logic if handled by new UI
-// But keeping closePasswordModal for safety if legacy modal pops up.
-
 
 window.approve = function (name) { // Make global
     socket.emit('admin_action', { action: 'approve', name });
@@ -719,7 +492,7 @@ function renderMessage(msg) {
     li.id = `msg-${msg.id}`;
     li.className = msg.senderId === localStorage.getItem('chat_token') ? 'outgoing' : 'incoming';
 
-    let formattedText = msg.text.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
+    let formattedText = (msg.text || '').replace(/@(\w+)/g, '<span class="mention">@$1</span>');
 
     let fileHtml = '';
     if (msg.file) {
@@ -733,53 +506,172 @@ function renderMessage(msg) {
         }
     }
 
-    const canDelete = msg.senderId === localStorage.getItem('chat_token') && !msg.deleted;
-    const deleteBtn = canDelete ? `<button class="delete-btn" onclick="deleteMessage('${msg.id}')">×</button>` : '';
-
     const content = msg.deleted ?
         `<span style="font-style:italic; color:#888;">🚫 This message was deleted by the sender</span>` :
         `
         <div class="sender-name">${msg.sender}</div>
         ${fileHtml}
         <div class="msg-text">${formattedText}</div>
-        ${deleteBtn}
         `;
 
     li.innerHTML = `<div class="bubble">${content}</div>`;
+
+    // CONTEXT MENU EVENT (Right-click & Long-press)
+    if (msg.senderId === localStorage.getItem('chat_token') && !msg.deleted) {
+        let pressTimer;
+
+        const handleContext = (e) => {
+            e.preventDefault();
+            messageToDeleteId = msg.id;
+            const x = e.clientX || (e.touches && e.touches[0].clientX);
+            const y = e.clientY || (e.touches && e.touches[0].clientY);
+            showContextMenu(x, y);
+        };
+
+        li.addEventListener('contextmenu', handleContext);
+
+        // Mobile Long Press
+        li.addEventListener('touchstart', (e) => {
+            pressTimer = setTimeout(() => handleContext(e), 600);
+        }, { passive: true });
+        li.addEventListener('touchend', () => clearTimeout(pressTimer));
+        li.addEventListener('touchmove', () => clearTimeout(pressTimer));
+    }
+
     chatList.appendChild(li);
 }
 
-window.deleteMessage = function (msgId) {
-    if (confirm("Delete this message?")) {
-        socket.emit('delete_message', msgId);
+function showContextMenu(x, y) {
+    contextMenu.style.display = 'block';
+
+    // Prevent menu from going off-screen
+    const menuWidth = contextMenu.offsetWidth || 160;
+    const menuHeight = contextMenu.offsetHeight || 50;
+    const winWidth = window.innerWidth;
+    const winHeight = window.innerHeight;
+
+    if (x + menuWidth > winWidth) x = winWidth - menuWidth - 10;
+    if (y + menuHeight > winHeight) y = winHeight - menuHeight - 10;
+    if (x < 0) x = 10;
+    if (y < 0) y = 10;
+
+    contextMenu.style.left = x + 'px';
+    contextMenu.style.top = y + 'px';
+}
+
+// Global Click to close context menu
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.context-menu')) {
+        contextMenu.style.display = 'none';
     }
+});
+
+window.showDeleteConfirm = function () {
+    contextMenu.style.display = 'none';
+    deleteConfirmModal.style.display = 'flex';
+}
+
+window.closeDeleteConfirm = function () {
+    deleteConfirmModal.style.display = 'none';
+    messageToDeleteId = null;
+}
+
+window.confirmDeletion = function () {
+    const msgId = messageToDeleteId;
+    closeDeleteConfirm();
+
+    // Visual Deletion (Local only)
+    const li = document.getElementById(`msg-${msgId}`);
+    if (li) {
+        pendingDeletions.set(msgId, li.innerHTML); // Backup for undo
+        li.innerHTML = `<div class="bubble"><span style="font-style:italic; color:#888;">🚫 Message hidden (Deleting...)</span></div>`;
+    }
+
+    // Show Undo Toast
+    undoToast.style.display = 'flex';
+
+    // Start 5s timer
+    deletionTimeout = setTimeout(() => {
+        executeDeletion(msgId);
+    }, 5000);
+}
+
+window.undoDeletion = function () {
+    clearTimeout(deletionTimeout);
+    undoToast.style.display = 'none';
+
+    const msgId = messageToDeleteId;
+    const li = document.getElementById(`msg-${msgId}`);
+    if (li && pendingDeletions.has(msgId)) {
+        li.innerHTML = pendingDeletions.get(msgId);
+    }
+
+    pendingDeletions.delete(msgId);
+    messageToDeleteId = null;
+}
+
+function executeDeletion(msgId) {
+    undoToast.style.display = 'none';
+    socket.emit('delete_message', msgId);
+    pendingDeletions.delete(msgId);
+    messageToDeleteId = null;
 }
 
 function scrollToBottom() {
     chatList.scrollTop = chatList.scrollHeight;
 }
 
-const emojiList = ['😀', '😂', '😍', '🥺', '😎', '👍', '👎', '🎉', '🔥', '❤️', '👀', '✅'];
+const emojiList = [
+    '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈', '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽', '👾', '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾',
+    '👋', '🤚', '🖐', '✋', '🖖', '👌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💅', '🤳', '💪', '🦾', '🦵', '🦿', '🦶', '👂', '🦻', '👃', '🧠', '🦷', '🦴', '👀', '👁', '👅', '👄', '💋', '🩸',
+    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️', '🛐', '⛎', '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓', '🆔', '⚛️'
+];
+
 let emojiPicker = document.querySelector('.emoji-picker');
 if (!emojiPicker) {
     emojiPicker = document.createElement('div');
     emojiPicker.className = 'emoji-picker';
     emojiPicker.style.display = 'none';
     emojiPicker.innerHTML = emojiList.map(e => `<span onclick="addEmoji('${e}')">${e}</span>`).join('');
-    document.querySelector('.input-area').appendChild(emojiPicker);
+
+    // FIX: Append to msg-area specifically so it shows when chatting
+    const msgAreaEl = document.getElementById('msg-area');
+    if (msgAreaEl) {
+        msgAreaEl.appendChild(emojiPicker);
+    }
 }
 
-window.toggleEmojiPicker = function () {
+window.toggleEmojiPicker = function (e) {
+    if (e) e.stopPropagation();
     emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'grid' : 'none';
 }
 
 window.addEmoji = function (emoji) {
-    msgInput.value += emoji;
+    const start = msgInput.selectionStart;
+    const end = msgInput.selectionEnd;
+    const text = msgInput.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end);
+
+    msgInput.value = before + emoji + after;
+
+    // Move cursor to after the inserted emoji
+    const newPos = start + emoji.length;
+    msgInput.setSelectionRange(newPos, newPos);
     msgInput.focus();
 }
 
+// Stop propagation inside picker to prevent closing when clicking the tray/scrollbar
+emojiPicker.addEventListener('click', (e) => {
+    e.stopPropagation();
+});
+
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('.emoji-btn') && !e.target.closest('.emoji-picker')) {
-        emojiPicker.style.display = 'none';
+    // If picker is open
+    if (emojiPicker.style.display === 'grid') {
+        // If clicking outside picker, emoji button, and the message input
+        if (!e.target.closest('.emoji-btn') && !e.target.closest('.emoji-picker') && !e.target.closest('#msg')) {
+            emojiPicker.style.display = 'none';
+        }
     }
 });

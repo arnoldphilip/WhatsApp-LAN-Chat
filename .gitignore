@@ -1,5 +1,7 @@
 node_modules/
-uploads/
 chat_data.json
+uploads/*
+!uploads/.gitkeep
+login_url.txt
+cloudflared.exe
 .DS_Store
-.env

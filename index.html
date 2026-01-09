@@ -2,6 +2,8 @@
 <html>
 
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Secure Chat 2026</title>
     <link rel="stylesheet" href="node_modules/cropperjs/dist/cropper.css">
     <link rel="stylesheet" href="style.css">
@@ -40,49 +42,22 @@
         <ul id="chat"></ul>
         <div id="waiting" style="display:none; text-align:center; padding:10px;">⌛ Awaiting Admin...</div>
 
-        <!-- Login Screen Overlay -->
-        <div id="login-screen" class="container"
-            style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:100; justify-content:center; align-items:center; background:var(--bg-color);">
-            <div class="login-card"
-                style="width:100%; max-width:400px; padding:30px; background:var(--container-bg); border-radius:10px; box-shadow:0 10px 25px var(--shadow); text-align:center;">
-                <h2 style="color:var(--btn-primary); margin-bottom:20px;">Welcome to Secure Chat</h2>
-
-                <div style="margin-bottom:15px; position:relative;">
-                    <input id="login-name" placeholder="Enter your name"
-                        style="width:90%; border:1px solid #ccc; padding:12px;">
-                    <div id="name-error" style="color:red; font-size:12px; display:none; margin-top:5px;">Invalid name,
-                        give another name</div>
-                </div>
-
-                <div style="margin-bottom:20px;">
-                    <input id="login-msg" placeholder="Optional message for Admin"
-                        style="width:90%; border:1px solid #ccc; padding:12px;">
-                </div>
-
-                <button onclick="join()"
-                    style="width:95%; background:var(--btn-primary); color:white; padding:12px; border-radius:5px;">Enter
-                    Chat</button>
-            </div>
+        <div class="input-area" id="login-area">
+            <input id="name" placeholder="Name">
+            <button onclick="join()">Join</button>
         </div>
-
-        <!-- Admin Conflict Popup -->
-        <div id="conflict-popup" class="modal-content"
-            style="display:none; position:absolute; top:20px; right:20px; z-index:200; width:300px; background:var(--container-bg); border:2px solid red; animation: slideDown 0.3s;">
-            <h3 style="color:red; margin-top:0;">⚠️ Admin Login Attempt</h3>
-            <p>Another device is trying to log in as Admin.</p>
-            <div style="font-weight:bold; margin-bottom:10px;">Auto-logout in: <span id="conflict-timer">5</span>s</div>
-            <button onclick="refuseLogin()" style="background:red; color:white; width:100%;">REFUSE LOGIN</button>
-        </div>
-
-        <!-- Main Chat Container (Hidden behind login initially) -->
-        <!-- We keep the structure but 'login-area' inside it is no longer needed -->
         <div class="input-area" id="msg-area" style="display:none;">
             <!-- EMOJI BUTTON (😀) and FILE INPUT (📎) buttons are here -->
-            <button class="emoji-btn" onclick="toggleEmojiPicker()">😀</button>
+            <button class="emoji-btn" onclick="toggleEmojiPicker(event)">😀</button>
             <button onclick="document.getElementById('file-input').click()">📎</button>
             <input type="file" id="file-input" hidden accept="image/*,video/*" onchange="sendFileHandler(this)">
             <input id="msg" placeholder="Message or Emoji..." onkeydown="if(event.key==='Enter') send()">
-            <button onclick="send()">Send</button>
+            <button onclick="send()" title="Send">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor"
+                        d="M1.101,21.757L23.8,12.028L1.101,2.3L1.1,8.105L15.306,12.028L1.1,15.95L1.101,21.757Z"></path>
+                </svg>
+            </button>
         </div>
     </div>
 
@@ -94,15 +69,14 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <!-- Image Editor Modal -->
-    <div id="image-editor-modal"
-        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:20; flex-direction:column; align-items:center; justify-content:center;">
-        <div style="width:90%; height:70%; background:#333; margin-bottom:10px;">
-            <img id="image-preview" style="max-width:100%; max-height:100%;">
+    <div id="image-editor-modal" class="modal-overlay">
+        <div class="editor-container">
+            <img id="image-preview">
         </div>
-        <div class="editor-controls" style="display:flex; gap:10px;">
-            <button onclick="cropImage()" style="background:#25d366; color:white;">Crop & Send</button>
-            <button onclick="sendOriginal()" style="background:#34b7f1; color:white;">Send Original</button>
-            <button onclick="cancelImage()" style="background:#ff4d4d; color:white;">Cancel</button>
+        <div class="editor-controls">
+            <button onclick="cropImage()" class="primary-action">Crop & Send</button>
+            <button onclick="sendOriginal()" class="secondary-action">Send Original</button>
+            <button onclick="cancelImage()" class="danger-action">Cancel</button>
         </div>
     </div>
 
@@ -115,6 +89,47 @@
             <button onclick="submitPassword()">Login</button>
             <button onclick="closePasswordModal()" class="cancel-btn">Cancel</button>
         </div>
+    </div>
+
+    <!-- Logout Modal -->
+    <div id="logout-modal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:50; justify-content:center; align-items:center;">
+        <div class="modal-content">
+            <h3>Logout Options</h3>
+            <div id="logout-options-container" style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
+                <button onclick="logoutSelf()" class="logout-self-btn" style="width:100% !important;">Logout
+                    Yourself</button>
+                <div id="admin-logout-options" style="display:none; flex-direction:column; gap:10px;">
+                    <button onclick="logoutAll()" class="end-session-btn" style="width:100% !important;">Logout
+                        Everyone</button>
+                </div>
+                <button onclick="closeLogoutModal()" class="cancel-btn" style="margin-left:0;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Context Menu -->
+    <div id="custom-context-menu" class="context-menu" style="display:none; position:fixed; z-index:1000;">
+        <div class="context-menu-item" onclick="showDeleteConfirm()">🗑️ Delete Message</div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-confirm-modal" class="modal-overlay" style="display:none; z-index:1001;">
+        <div class="modal-content">
+            <h3>Delete Message?</h3>
+            <p>This action can be undone for 5 seconds.</p>
+            <div style="display:flex; gap:10px; margin-top:20px; justify-content:center;">
+                <button onclick="confirmDeletion()" class="danger-action"
+                    style="padding:10px 20px !important; border-radius:8px !important;">Confirm</button>
+                <button onclick="closeDeleteConfirm()" class="cancel-btn" style="margin:0;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Undo Toast Notification -->
+    <div id="undo-toast" class="undo-toast" style="display:none;">
+        <span>Message deleted</span>
+        <button onclick="undoDeletion()">UNDO</button>
     </div>
 
     <script src="node_modules/cropperjs/dist/cropper.js"></script>
