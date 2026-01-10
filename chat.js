@@ -74,6 +74,7 @@ logoutBtn.innerText = '🚪';
 logoutBtn.title = 'Logout';
 logoutBtn.style.background = 'transparent';
 logoutBtn.style.padding = '5px';
+logoutBtn.style.display = 'none'; // Hidden by default
 logoutBtn.onclick = handleLogout;
 // Insert before theme button (which is last usually)
 // Wait, we need to create theme button first if it didn't exist or we removed it.
@@ -88,6 +89,7 @@ if (headerControls) {
 }
 
 function handleLogout() {
+    if (!currentUser) return; // safety guard
     logoutModal.style.display = 'flex';
     if (isAdmin) {
         adminLogoutOptions.style.display = 'flex';
@@ -154,6 +156,9 @@ socket.on('login_success', (data) => {
         // Initialize controls but don't show panel yet unless requests exist
         addAdminControls();
     }
+
+    // Show logout button only after login
+    logoutBtn.style.display = 'block';
 });
 
 socket.on('require_password', () => {

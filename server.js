@@ -325,6 +325,13 @@ io.on('connection', (socket) => {
         sessions = {};
         requests = [];
         adminActive = false;
+
+        // Gracefully stop the server process
+        console.log(`\n🛑 Admin triggered server shutdown. Choice: ${choice}`);
+        setTimeout(() => {
+            console.log("👋 Server stopping...");
+            process.exit(0);
+        }, 1000); // 1 second delay to ensure clients receive the signal
     });
 
     socket.on('logout_self', () => {
