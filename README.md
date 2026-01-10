@@ -1,6 +1,6 @@
-# 🚀 WhatsApp LAN Chat (Stable v2.0)
+# 🚀 WhatsApp LAN Chat (Stable v3.0)
 
-A premium, responsive, real-time messaging application designed for local networks. Features a modern WhatsApp-style UI, admin controls, and session persistence.
+A premium, responsive, real-time messaging application designed for local networks. Features a modern WhatsApp-style UI, deep interaction patterns, and robust admin management.
 
 ---
 
@@ -21,28 +21,38 @@ A premium, responsive, real-time messaging application designed for local networ
 ---
 
 ### **🌟 Top Features**
+*   **↩️ Advanced Replies**: WhatsApp-style message quoting with **Spotlight Navigation** (Smooth scroll + Zoom spotlight).
+*   **🏷️ @Mentions**: Intelligent tagging system with autocomplete popup for chat participants.
 *   **📱 Fully Responsive**: Native app feel on both Desktop and Mobile.
-*   **🛡️ Admin Control**: Secure approval system for new users.
-*   **📁 File Sharing**: Drag & drop images/videos with built-in cropping.
-*   **🗑️ Message Management**: Right-click to delete with a 5-second **Undo** safety net.
-*   **😀 Smart Emojis**: Hover/Toggle picker with cursor-position insertion.
-*   **🌙 Dark Mode**: Premium dark/light themes that persist across reloads.
-*   **💾 Persistent Sessions**: Users stay logged in even if the page is refreshed.
+*   **👥 Member Management**: Admin can manage a live member list (Add/Remove) with instant access termination.
+*   **🛡️ Secure Admin**: Password-protected "Admin" identity with a full approval lobby.
+*   **📁 File Sharing**: Drag & drop images/videos with built-in cropping and editing.
+*   **🗑️ Smart Deletion**: Right-click to delete with a 5-second **Undo** safety net.
+*   **✨ Premium UX**: Replaced all browser alerts with professional in-app confirmation modals.
+*   **💾 Deep Persistence**: Session tokens ensure users stay logged in across refreshes and reconnections.
+
+---
+
+### **🆕 What's New (v3.0)**
+*   **Spotlight Focus**: Every time you jump to a replied message, the chat dims and zooms into the original message for a premium "spotlight" feel.
+*   **Stable Identity Mapping**: Fixed the "Socket Flood" issue; user lists and logs remain clean and accurate even during network flickers.
+*   **Admin Power-Up**: Admins can now explicitly see and "Remove" any participant from the unified Admin Controls panel.
+*   **Contextual Feedback**: Differentiated messaging for "Rejection" vs "Removal" to keep user experience transparent.
 
 ---
 
 ### **🛠️ Admin Commands**
-*   **Admin Name:** `Admin` (Case insensitive)
+*   **Admin Name:** `Admin`
 *   **Admin Password:** `Wh@tme`
-*   **Permissions:** Approve/Reject users, End Sessions, Save/Clear chat history.
+*   **Permissions:** Approve/Reject/Remove users, End Sessions, Save/Clear chat history.
 
 ---
 
 ### **📂 Project Structure**
-*   `server.js`: Node.js Express/Socket.io backend.
-*   `chat.js`: Core frontend logic & UI interactions.
-*   `style.css`: Premium themes & responsive layouts.
-*   `index.html`: Optimized semantic structure.
+*   `server.js`: Node.js Express/Socket.io backend with identity-mapped sessions.
+*   `chat.js`: Complex frontend logic including Reply-to-ID mapping and Mention handling.
+*   `style.css`: Modern styling with Spotlight-Zoom animations and Dark Mode support.
 
 ---
-*Legacy version (v1.0) is available on the `legacy-v1` branch.*
+*Legacy version (v2.0) is available on the `legacy-v2` branch.*
+

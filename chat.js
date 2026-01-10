@@ -25,6 +25,7 @@ const passwordModal = document.getElementById("password-modal");
 const passwordInput = document.getElementById("admin-password");
 const adminToggleBtn = document.getElementById("admin-toggle-btn");
 const requestsSection = document.getElementById("requests-section");
+const membersList = document.getElementById("members-list");
 const adminActions = document.getElementById("admin-actions");
 const logoutModal = document.getElementById("logout-modal");
 const adminLogoutOptions = document.getElementById("admin-logout-options");
@@ -35,13 +36,20 @@ const undoToast = document.getElementById("undo-toast");
 // Deletion State
 let messageToDeleteId = null;
 let deletionTimeout = null;
-let pendingDeletions = new Map(); // Store full msg data for undo recovery
+let pendingDeletions = new Map();
+
+// Local Message Cache for Replies
+let localMessages = new Map(); // id -> { sender, text }
 
 // Mentions Logic
 let mentionPopup = document.createElement('div');
 mentionPopup.className = 'mention-popup';
-mentionPopup.style.display = 'none';
 document.body.appendChild(mentionPopup);
+
+// Reply UI Elements
+const replyPreview = document.getElementById('reply-preview');
+const replyToName = document.getElementById('reply-to-name');
+const replyToText = document.getElementById('reply-to-text');
 
 // --- Initialization ---
 
@@ -99,11 +107,23 @@ window.logoutSelf = function () {
 }
 
 window.logoutAll = function () {
-    if (confirm("Save chat history before ending?\nOK = Save & End\nCancel = Delete & End")) {
-        socket.emit('end_session', 'save');
-    } else {
-        socket.emit('end_session', 'delete');
-    }
+    showEndSessionModal();
+}
+
+const endSessionModal = document.getElementById('end-session-confirm-modal');
+
+window.showEndSessionModal = function () {
+    endSessionModal.style.display = 'flex';
+}
+
+window.closeEndSessionModal = function () {
+    endSessionModal.style.display = 'none';
+}
+
+window.executeEndSession = function (action) {
+    socket.emit('end_session', action);
+    closeEndSessionModal();
+    closeLogoutModal();
 }
 
 let sessionBtn = null;
@@ -160,6 +180,13 @@ socket.on('access_denied', () => {
     location.reload();
 });
 
+socket.on('user_removed', () => {
+    alert("You have been removed from the chat.");
+    localStorage.removeItem('chat_token');
+    localStorage.removeItem('chat_name');
+    location.reload();
+});
+
 socket.on('error_message', (msg) => {
     alert(msg);
 });
@@ -171,20 +198,40 @@ socket.on('clear_token', () => {
 
 socket.on('load_messages', (messages) => {
     chatList.innerHTML = '';
-    messages.forEach(msg => renderMessage(msg));
+    localMessages.clear(); // Clear cache on reload
+    messages.forEach(msg => {
+        localMessages.set(msg.id, { sender: msg.sender, text: msg.text, deleted: msg.deleted }); // Store for replies
+        renderMessage(msg);
+    });
     scrollToBottom();
 });
 
 socket.on('new_message', (msg) => {
+    localMessages.set(msg.id, { sender: msg.sender, text: msg.text, deleted: false });
     renderMessage(msg);
     scrollToBottom();
 });
 
 socket.on('message_deleted', (msgId) => {
+    // 1. Update Local Cache
+    const cached = localMessages.get(msgId);
+    if (cached) {
+        cached.deleted = true;
+    }
+
+    // 2. Update the deleted message bubble itself
     const li = document.getElementById(`msg-${msgId}`);
     if (li) {
         li.innerHTML = `<div class="bubble"><span style="font-style:italic; color:#888;">🚫 This message was deleted by the sender</span></div>`;
     }
+
+    // 3. Reactively update any visible Reply Blocks referencing this message
+    const replyBlocks = document.querySelectorAll(`.reply-block[onclick="scrollToMessage('${msgId}')"]`);
+    replyBlocks.forEach(block => {
+        const textSpan = block.querySelector('.reply-block-text');
+        if (textSpan) textSpan.innerText = "🚫 Original message deleted";
+    });
+
     // If this was our pending deletion, clean up state
     if (messageToDeleteId === msgId) {
         clearTimeout(deletionTimeout);
@@ -194,53 +241,81 @@ socket.on('message_deleted', (msgId) => {
     }
 });
 
+
 socket.on('update_requests', (requests) => {
     if (!isAdmin) return;
 
     requestsList.innerHTML = '';
 
     if (requests.length > 0) {
-        // Auto Show Panel
         adminPanel.style.display = 'block';
         requestsSection.style.display = 'block';
 
         requests.forEach(req => {
             const div = document.createElement('div');
-            div.style.padding = '8px';
-            div.style.borderBottom = '1px solid #eee';
+            // Premium Row Styling
+            div.style.padding = '12px 0';
+            div.style.borderBottom = '1px solid rgba(0,0,0,0.05)';
             div.style.display = 'flex';
             div.style.justifyContent = 'space-between';
             div.style.alignItems = 'center';
+
             div.innerHTML = `
-                <span style="font-weight:500">${req.name}</span>
-                <div>
-                    <button onclick="approve('${req.name}')" style="background:#25d366; padding:4px 10px; font-size:14px; margin-right:5px;">✔</button>
-                    <button onclick="reject('${req.name}')" style="background:#ff4d4d; padding:4px 10px; font-size:14px;">✖</button>
+                <span style="font-weight:500; font-size:15px; color:var(--text-color);">${req.name}</span>
+                <div style="display:flex; gap:8px;">
+                     <button onclick="approve('${req.name}')" 
+                        class="approve-btn"
+                        style="background:#25d366 !important; color:white !important; padding:6px 14px !important; border-radius:6px !important; font-size:13px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
+                        Accept
+                     </button>
+                    <button onclick="reject('${req.name}')" 
+                        class="reject-btn"
+                        style="background:rgba(255, 77, 77, 0.1) !important; color:#ff4d4d !important; padding:6px 14px !important; border-radius:6px !important; font-size:13px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
+                        Decline
+                    </button>
                 </div>
             `;
             requestsList.appendChild(div);
         });
     } else {
         requestsSection.style.display = 'none';
-        // Check if admin panel should be hidden?
-        // Logic: "show only when someone request". 
-        // But user might look for "End Session".
-        // If I hide it here, user has to click gear icon to find End Session.
-        // That matches "otherwise it must not appear".
-        // So yes, hide entire panel if no requests AND assuming we want to minimize it.
-        // However, this might annoy Admin if they are in the middle of "End Session".
-        // I will only hide requests section. Admin can close panel manually.
-        // OR: If the panel was auto-opened, maybe auto-close? Hard to track.
-        // Let's hide the REQUESTS SECTION. The panel remains open if user opened it, or we can close it.
-        // Prompt: "show only when someone request otherwise it must not appear".
-        // Strict interpretation: Panel gone.
-        // Exception: "hover towards top... small button to show".
-        // So: Default state is HIDDEN.
-        // If Requests > 0 -> SHOW.
-        // If Requests == 0 -> HIDE (unless user wants it? But prompt says "must not appear").
-        // I'll auto-hide the panel if requests are 0.
-        // Usage: Requests cleared -> Panel closes. Admin wants to End Session -> Clicks Gear -> Panel Opens (with no requests) -> Clicks End Session.
-        adminPanel.style.display = 'none';
+        // Only hide panel if NO members section visible logic exists yet... 
+        // For now, prompt logic implies auto-hide if empty, but we have member list now.
+        // We will manage panel visibility separately or let user close it.
+    }
+});
+
+socket.on('update_members', (members) => {
+    if (!isAdmin) return;
+
+    membersList.innerHTML = '';
+    const activeMembers = members.filter(m => !m.isAdmin); // Exclude Admin self
+
+    if (activeMembers.length > 0) {
+        activeMembers.forEach(mem => {
+            const div = document.createElement('div');
+            // Consistent Premium Row Styling
+            div.style.padding = '12px 0';
+            div.style.borderBottom = '1px solid rgba(0,0,0,0.05)';
+            div.style.display = 'flex';
+            div.style.justifyContent = 'space-between';
+            div.style.alignItems = 'center';
+
+            div.innerHTML = `
+                <span style="font-weight:500; font-size:15px; color:var(--text-color);">${mem.name}</span>
+                <button onclick="removeMember('${mem.name}')" 
+                    class="remove-btn"
+                    style="background:transparent !important; border:1px solid #ff4d4d !important; color:#ff4d4d !important; padding:5px 12px !important; border-radius:6px !important; font-size:12px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
+                    Remove
+                </button>
+            `;
+            membersList.appendChild(div);
+        });
+        document.getElementById('members-section').style.display = 'block';
+    } else {
+        document.getElementById('members-section').style.display = 'none';
+        membersList.innerHTML = '<div style="padding:10px; color:var(--secondary-text); font-style:italic; font-size:13px;">No other members joined yet.</div>';
+        document.getElementById('members-section').style.display = 'block'; // Show empty state
     }
 });
 
@@ -294,17 +369,19 @@ window.reject = function (name) {
     socket.emit('admin_action', { action: 'reject', name });
 }
 
+window.removeMember = function (name) {
+    if (confirm(`Are you sure you want to remove ${name} from the chat?`)) {
+        socket.emit('admin_action', { action: 'remove', name });
+    }
+}
+
 function addAdminControls() {
     if (sessionBtn) return;
     sessionBtn = document.createElement('button');
     sessionBtn.innerText = "🛑 End Session";
     sessionBtn.className = "end-session-btn"; // Use Data-Driven Class
     sessionBtn.onclick = () => {
-        if (confirm("Save chat history before ending?\nOK = Save & End\nCancel = Delete & End")) {
-            socket.emit('end_session', 'save');
-        } else {
-            socket.emit('end_session', 'delete');
-        }
+        showEndSessionModal();
     };
     adminActions.appendChild(sessionBtn);
 }
@@ -342,7 +419,84 @@ function clearInput() {
     msgInput.placeholder = 'Message or Emoji...';
     fileInput.value = '';
     pendingFile = null;
+    cancelReply(); // Clear reply state
+}
+
+// --- Reply Logic ---
+
+window.triggerReplyFromContext = function () {
+    const msgId = messageToDeleteId; // We reuse this variable from context menu
+    contextMenu.style.display = 'none';
+
+    const originalMsg = localMessages.get(msgId);
+    if (!originalMsg) return;
+
+    replyToMessageId = msgId;
+
+    replyPreview.style.display = 'flex';
+    replyToName.innerText = originalMsg.sender;
+    replyToText.innerText = originalMsg.text || (originalMsg.file ? '[File Attachment]' : '');
+
+    msgInput.focus();
+}
+
+window.cancelReply = function () {
     replyToMessageId = null;
+    replyPreview.style.display = 'none';
+    replyToName.innerText = '';
+    replyToText.innerText = '';
+}
+
+window.scrollToReplyOrigin = function () {
+    if (replyToMessageId) {
+        scrollToMessage(replyToMessageId);
+    }
+}
+
+window.scrollToMessage = function (msgId) {
+    const el = document.getElementById(`msg-${msgId}`);
+
+    if (!el) {
+        alert("Message not found.");
+        return;
+    }
+
+    // Check if message is already deleted
+    const msgData = localMessages.get(msgId);
+    if (msgData && msgData.deleted) {
+        // Just highlight the "Deleted" placeholder and don't scroll/spotlight
+        el.classList.add('message-highlight');
+        setTimeout(() => el.classList.remove('message-highlight'), 2000);
+        return;
+    }
+
+    // 1. Smooth Scroll to center
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // 2. Spotlight & Focus Interaction
+    const triggerSpotlight = () => {
+        // Add spotlight to message and dim to the chat container
+        el.classList.add('spotlight-active');
+        chatList.classList.add('chat-dimmed');
+
+        // 3. Cleanup after animation cycle (1.5s)
+        setTimeout(() => {
+            el.classList.remove('spotlight-active');
+            chatList.classList.remove('chat-dimmed');
+        }, 1500);
+    };
+
+    // If we didn't need to scroll much, trigger immediately. 
+    // Otherwise, delay slightly to allow scroll to start/complete for best visual impact.
+    const rect = el.getBoundingClientRect();
+    const isInView = rect.top >= 0 && rect.bottom <= window.innerHeight;
+
+    if (isInView) {
+        triggerSpotlight();
+    } else {
+        // Wait for scroll to move the message before spotlighting
+        setTimeout(triggerSpotlight, 300);
+    }
 }
 
 // --- Image Handling ---
@@ -465,11 +619,17 @@ msgInput.addEventListener('keyup', (e) => {
 
 function showMentionPopup(matches, atIndex) {
     mentionPopup.innerHTML = '';
+    if (matches.length === 0) {
+        mentionPopup.style.display = 'none';
+        return;
+    }
     mentionPopup.style.display = 'block';
 
     const rect = msgInput.getBoundingClientRect();
+    // Position fixed above input
+    const bottomPos = window.innerHeight - rect.top + 10;
     mentionPopup.style.left = rect.left + 'px';
-    mentionPopup.style.bottom = (window.innerHeight - rect.top + 5) + 'px';
+    mentionPopup.style.bottom = bottomPos + 'px';
 
     matches.forEach(name => {
         const div = document.createElement('div');
@@ -477,6 +637,7 @@ function showMentionPopup(matches, atIndex) {
         div.onclick = () => {
             const val = msgInput.value;
             const before = val.substring(0, atIndex);
+            // Replace everything after @ with name + space
             msgInput.value = before + '@' + name + ' ';
             mentionPopup.style.display = 'none';
             msgInput.focus();
@@ -494,6 +655,25 @@ function renderMessage(msg) {
 
     let formattedText = (msg.text || '').replace(/@(\w+)/g, '<span class="mention">@$1</span>');
 
+    // Reply Block Logic
+    let replyHtml = '';
+    if (msg.replyTo) {
+        const parent = localMessages.get(msg.replyTo);
+        if (parent) {
+            replyHtml = `
+            <div class="reply-block" onclick="scrollToMessage('${msg.replyTo}')">
+                <span class="reply-block-name">${parent.sender}</span>
+                <span class="reply-block-text">${parent.deleted ? '🚫 Original message deleted' : (parent.text || '[File]')}</span>
+            </div>`;
+        } else {
+            replyHtml = `
+            <div class="reply-block">
+                <span class="reply-block-name">Unknown</span>
+                <span class="reply-block-text">Original message unavailable</span>
+            </div>`;
+        }
+    }
+
     let fileHtml = '';
     if (msg.file) {
         const { url, type, name } = msg.file;
@@ -509,6 +689,7 @@ function renderMessage(msg) {
     const content = msg.deleted ?
         `<span style="font-style:italic; color:#888;">🚫 This message was deleted by the sender</span>` :
         `
+        ${replyHtml}
         <div class="sender-name">${msg.sender}</div>
         ${fileHtml}
         <div class="msg-text">${formattedText}</div>
@@ -516,13 +697,19 @@ function renderMessage(msg) {
 
     li.innerHTML = `<div class="bubble">${content}</div>`;
 
-    // CONTEXT MENU EVENT (Right-click & Long-press)
-    if (msg.senderId === localStorage.getItem('chat_token') && !msg.deleted) {
+    // CONTEXT MENU EVENT (Right-click & Long-press for ALL, with varying options)
+    if (!msg.deleted) {
         let pressTimer;
 
         const handleContext = (e) => {
             e.preventDefault();
-            messageToDeleteId = msg.id;
+            messageToDeleteId = msg.id; // Using this as 'Selected Message ID' for simplicity
+
+            const isOwner = msg.senderId === localStorage.getItem('chat_token');
+            // Show/Hide Delete Option based on ownership
+            const deleteOption = document.getElementById('ctx-delete');
+            if (deleteOption) deleteOption.style.display = isOwner ? 'block' : 'none';
+
             const x = e.clientX || (e.touches && e.touches[0].clientX);
             const y = e.clientY || (e.touches && e.touches[0].clientY);
             showContextMenu(x, y);

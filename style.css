@@ -609,6 +609,16 @@ button[onclick="send()"]:hover {
     animation: fadeIn 0.3s ease;
 }
 
+.approve-btn:hover {
+    filter: brightness(1.1);
+}
+
+.reject-btn:hover,
+.remove-btn:hover {
+    background: #ff4d4d !important;
+    color: white !important;
+}
+
 .undo-toast button {
     background: transparent;
     color: #25d366;
@@ -621,7 +631,203 @@ button[onclick="send()"]:hover {
     min-height: unset;
 }
 
-.undo-toast button:hover {
-    text-decoration: underline;
+/* Reply Preview (Above Input) */
+.reply-preview {
+    background: var(--container-bg);
+    border-left: 5px solid var(--btn-primary);
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    animation: slideUp 0.2s ease-out;
+    cursor: pointer;
+    /* Provide feedback that its interactive/dismissible */
+}
+
+/* Ensure easy tap on mobile */
+@media (max-width: 768px) {
+    .reply-preview {
+        padding: 10px;
+    }
+}
+
+.reply-content {
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+    overflow: hidden;
+    flex: 1;
+}
+
+.reply-name {
+    color: var(--btn-primary);
+    font-weight: bold;
+    margin-bottom: 2px;
+}
+
+.reply-text {
+    color: var(--secondary-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.close-reply {
+    color: var(--secondary-text);
     background: transparent;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    margin-left: 10px;
+    padding: 0;
+    min-width: 30px;
+}
+
+/* Reply Block inside Message Bubble */
+.reply-block {
+    background: rgba(0, 0, 0, 0.05);
+    border-left: 4px solid var(--btn-primary);
+    border-radius: 4px;
+    padding: 5px 8px;
+    margin-bottom: 5px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    user-select: none;
+}
+
+.reply-block-name {
+    font-weight: bold;
+    color: var(--btn-primary);
+    margin-bottom: 2px;
+}
+
+.reply-block-text {
+    color: var(--text-color);
+    opacity: 0.8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+body.dark-mode .reply-block {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Mention Popup */
+.mention-popup {
+    position: fixed;
+    /* Fixed to float over content */
+    background: var(--container-bg);
+    border: 1px solid var(--secondary-text);
+    border-radius: 8px;
+    box-shadow: 0 -4px 10px var(--shadow);
+    z-index: 200;
+    max-height: 150px;
+    overflow-y: auto;
+    width: 200px;
+    display: none;
+}
+
+.mention-popup div {
+    padding: 10px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    color: var(--text-color);
+}
+
+.mention-popup div:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+body.dark-mode .mention-popup div:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(10px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Premium Spotlight Effect for Reply Navigation */
+@keyframes spotlight-in {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 1px 1px var(--shadow);
+    }
+
+    50% {
+        transform: scale(1.08);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    100% {
+        transform: scale(1);
+        box-shadow: 0 1px 1px var(--shadow);
+    }
+}
+
+@keyframes dim-in {
+    from {
+        opacity: 1;
+        filter: blur(0);
+    }
+
+    to {
+        opacity: 0.4;
+        filter: blur(2px);
+    }
+}
+
+/* Base style for bubbles to allow scaling/z-index */
+#chat li .bubble {
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease, z-index 0s;
+    position: relative;
+    transform-origin: center;
+}
+
+/* Spotlight State */
+.spotlight-active .bubble {
+    z-index: 100 !important;
+    animation: spotlight-in 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+    background-color: var(--container-bg) !important;
+    /* Ensure it stands out if it was translucent */
+    border: 1px solid var(--btn-primary);
+}
+
+/* Dimming other messages */
+.chat-dimmed li:not(.spotlight-active) {
+    opacity: 0.3;
+    filter: grayscale(0.2) blur(1px);
+    transition: opacity 0.5s ease, filter 0.5s ease;
+}
+
+/* Ensure transition works when removing classes */
+#chat li {
+    transition: opacity 0.5s ease, filter 0.5s ease;
+}
+
+/* Fallback Highlight for Deleted Messages */
+@keyframes deleted-flash {
+    0% {
+        background-color: rgba(255, 77, 77, 0.2);
+    }
+
+    100% {
+        background-color: transparent;
+    }
+}
+
+.message-highlight .bubble {
+    animation: deleted-flash 2s ease-out;
 }

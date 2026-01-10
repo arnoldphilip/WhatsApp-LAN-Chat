@@ -86,7 +86,8 @@ app.post('/upload', upload.single('file'), (req, res) => {
 });
 
 io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
+    // We only log once the user successfully identifies themselves via 'join_request'
+
 
     // 1. Join Request
     socket.on('join_request', (data) => {
@@ -107,6 +108,11 @@ io.on('connection', (socket) => {
                 session.socketId = socket.id;
                 session.connected = true;
 
+                // Logging: Only log reconnects for approved users or admins to avoid spam
+                if (session.approved || session.isAdmin) {
+                    console.log(`User reconnected: ${session.name} (${socket.id})`);
+                }
+
                 // If it was the admin
                 if (session.isAdmin) adminActive = true;
 
@@ -125,6 +131,9 @@ io.on('connection', (socket) => {
                 if (session.isAdmin) {
                     const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId }));
                     socket.emit('update_requests', pending);
+
+                    const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin }));
+                    socket.emit('update_members', members);
                 }
 
                 io.emit('user_list', getActiveUserNames()); // Update list for mentions
@@ -162,6 +171,8 @@ io.on('connection', (socket) => {
                     socketId: socket.id
                 };
                 adminActive = true;
+
+                console.log(`Admin joined: ${normalizedName} (${socket.id})`);
 
                 socket.emit('login_success', { name: "Admin", isAdmin: true, token: newToken });
                 socket.emit('load_messages', messages);
@@ -210,10 +221,13 @@ io.on('connection', (socket) => {
         // Notify Admin
         const adminSession = Object.values(sessions).find(s => s.isAdmin && s.connected);
         if (adminSession) {
-            io.to(adminSession.socketId).emit('update_requests', [{ name: normalizedName, socketId: socket.id }]); // Just send all pending usually, but incremental is ok
             // Better: send full list
             const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId }));
             io.to(adminSession.socketId).emit('update_requests', pending);
+
+            // Also send members just in case but usually only requests change here
+            const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin }));
+            io.to(adminSession.socketId).emit('update_members', members);
         }
 
         socket.emit('waiting_approval_with_token', newToken); // Client saves token
@@ -230,6 +244,7 @@ io.on('connection', (socket) => {
         if (targetSession) {
             if (data.action === 'approve') {
                 targetSession.approved = true;
+                console.log(`User joined: ${targetSession.name} (Approved by Admin)`);
                 if (targetSession.connected && targetSession.socketId) {
                     io.to(targetSession.socketId).emit('login_success', {
                         name: targetSession.name,
@@ -244,11 +259,23 @@ io.on('connection', (socket) => {
                     io.to(targetSession.socketId).emit('clear_token'); // Tell client to forget token
                 }
                 delete sessions[targetName];
+            } else if (data.action === 'remove') { // NEW: Remove Member
+                if (targetSession.connected && targetSession.socketId) {
+                    io.to(targetSession.socketId).emit('user_removed');
+                    io.to(targetSession.socketId).emit('clear_token');
+                }
+                delete sessions[targetName];
             }
 
             // Update Admin UI
             const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId }));
+
+            // Send updated lists to Admin
             socket.emit('update_requests', pending);
+
+            const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin }));
+            socket.emit('update_members', members);
+
             io.emit('user_list', getActiveUserNames());
         }
     });
@@ -321,9 +348,10 @@ io.on('connection', (socket) => {
         const session = Object.values(sessions).find(s => s.socketId === socket.id);
         if (session) {
             session.connected = false;
-            // We do NOT delete the session immediately to allow reload/reconnect.
-            // But we might want to update the "User List" to show offline?
-            // For now, keep it simple.
+            // Only log disconnects for users who were actually approved or admins
+            if (session.approved || session.isAdmin) {
+                console.log(`User disconnected: ${session.name}`);
+            }
         }
     });
 
