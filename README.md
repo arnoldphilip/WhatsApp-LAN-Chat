@@ -1,4 +1,4 @@
-# 🚀 WhatsApp LAN Chat (Stable v3.0)
+# 🚀 LANChat (Stable v3.1)
 
 A premium, responsive, real-time messaging application designed for local networks. Features a modern WhatsApp-style UI, deep interaction patterns, and robust admin management.
 
