@@ -438,19 +438,25 @@ server.listen(PORT, '0.0.0.0', () => {
     const interfaces = os.networkInterfaces();
     let localIp = 'localhost';
 
+    // Improved IP detection: handles string ('IPv4') and integer (4) family types
     for (let devName in interfaces) {
         let iface = interfaces[devName];
         for (let i = 0; i < iface.length; i++) {
             let alias = iface[i];
-            if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
+            const isIpv4 = alias.family === 'IPv4' || alias.family === 4;
+            if (isIpv4 && !alias.internal) {
+                // Heuristic: prioritize physical-looking interface names or just take the first one found
+                // Usually we want the one that isn't 'vEthernet' or similar if possible, 
+                // but any non-internal IPv4 is better than localhost.
                 localIp = alias.address;
             }
         }
     }
 
-    console.log(`\n🚀 Server is RUNNING!`);
+    console.log(`\n🚀 LANChat Server is RUNNING!`);
     console.log(`-------------------------------------------`);
     console.log(`🏠 On this PC:   http://localhost:${PORT}`);
     console.log(`📱 On Mobile:    http://${localIp}:${PORT}`);
     console.log(`-------------------------------------------\n`);
+    console.log(`[Network] Bound to 0.0.0.0 (All Interfaces)`);
 });
