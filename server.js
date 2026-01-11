@@ -150,9 +150,9 @@ io.on('connection', (socket) => {
                 }
             }
 
-            // Logging: Only log reconnects if they were actually offline
+            // Logging: Logical Rejoin (Offline -> Online)
             if (!alreadyConnected && (session.approved || session.isAdmin)) {
-                console.log(`User reconnected: ${session.name} (${socket.id})`);
+                console.log(`👤 Logical Rejoin: ${session.name} [ID: ${session.userId}]`);
             }
 
             // If it was the admin
@@ -246,6 +246,7 @@ io.on('connection', (socket) => {
 
         // New Session
         const id = uuidv4();
+        console.log(`📩 Join Request: ${normalizedName} [Temp ID: ${id}]`);
         sessions[id] = {
             userId: id,
             name: normalizedName,
@@ -283,7 +284,7 @@ io.on('connection', (socket) => {
         if (targetSession) {
             if (data.action === 'approve') {
                 targetSession.approved = true;
-                console.log(`User joined: ${targetSession.name} (Approved by Admin)`);
+                console.log(`✅ First-time Join: ${targetSession.name} [ID: ${targetSession.userId}] (Approved)`);
                 if (targetSession.connected && targetSession.socketId) {
                     io.to(targetSession.socketId).emit('login_success', {
                         name: targetSession.name,
@@ -406,10 +407,15 @@ io.on('connection', (socket) => {
             if (session.socketId === socket.id) {
                 session.connected = false;
                 if (session.isAdmin) adminActive = false;
-                // Only log disconnects for users who were actually approved or admins
-                if (session.approved || session.isAdmin) {
-                    console.log(`User disconnected: ${session.name}`);
-                }
+
+                // Logical Disconnect Check: Wait a moment to see if it's just a page refresh
+                const closedSocketId = socket.id;
+                setTimeout(() => {
+                    // Only log if the user hasn't re-associated with a NEW socket since
+                    if (!session.connected && (session.approved || session.isAdmin) && session.socketId === closedSocketId) {
+                        console.log(`🚪 Logical Disconnect: ${session.name} [ID: ${session.userId}]`);
+                    }
+                }, 2000);
             }
         }
     });
