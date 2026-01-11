@@ -2,6 +2,7 @@ const socket = io();
 
 // State
 let currentUser = null;
+let currentUserId = null;
 let isAdmin = false;
 let replyToMessageId = null;
 let userList = [];
@@ -145,6 +146,7 @@ socket.on('connect', () => {
 
 socket.on('login_success', (data) => {
     currentUser = data.name;
+    currentUserId = data.userId;
     isAdmin = data.isAdmin;
 
     localStorage.setItem('chat_name', data.name);
@@ -671,7 +673,13 @@ function showMentionPopup(matches, atIndex) {
 function renderMessage(msg) {
     const li = document.createElement('li');
     li.id = `msg-${msg.id}`;
-    li.className = msg.senderId === localStorage.getItem('chat_token') ? 'outgoing' : 'incoming';
+
+    // Identity-Aware Alignment logic
+    // We check senderUserId if available (new format), else fallback to senderId (old format)
+    const isSelf = (msg.senderUserId && msg.senderUserId === currentUserId) ||
+        (msg.senderId && msg.senderId === localStorage.getItem('chat_token'));
+
+    li.className = isSelf ? 'outgoing' : 'incoming';
 
     let formattedText = (msg.text || '').replace(/@(\w+)/g, '<span class="mention">@$1</span>');
 
@@ -725,7 +733,9 @@ function renderMessage(msg) {
             e.preventDefault();
             messageToDeleteId = msg.id; // Using this as 'Selected Message ID' for simplicity
 
-            const isOwner = msg.senderId === localStorage.getItem('chat_token');
+            const isOwner = (msg.senderUserId && msg.senderUserId === currentUserId) ||
+                (msg.senderId && msg.senderId === localStorage.getItem('chat_token'));
+
             // Show/Hide Delete Option based on ownership
             const deleteOption = document.getElementById('ctx-delete');
             if (deleteOption) deleteOption.style.display = isOwner ? 'block' : 'none';

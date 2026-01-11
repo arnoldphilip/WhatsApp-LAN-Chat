@@ -332,7 +332,8 @@ io.on('connection', (socket) => {
         const message = {
             id: Date.now().toString(),
             sender: senderSession.name,
-            senderId: senderSession.token, // Use token as persistent ID for deletion rights
+            senderUserId: senderSession.userId, // Use stable userId for alignment
+            senderId: senderSession.token, // Keep for legacy/deletion logic compatibility
             text: msgData.text || '',
             file: msgData.file || null,
             replyTo: msgData.replyTo || null,
