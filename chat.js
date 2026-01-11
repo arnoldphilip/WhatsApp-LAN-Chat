@@ -227,7 +227,7 @@ socket.on('message_deleted', (msgId) => {
     // 2. Update the deleted message bubble itself
     const li = document.getElementById(`msg-${msgId}`);
     if (li) {
-        li.innerHTML = `<div class="bubble"><span style="font-style:italic; color:#888;">🚫 This message was deleted by the sender</span></div>`;
+        li.innerHTML = `<div class="bubble"><span style="font-style:italic; color:var(--text-secondary);">🚫 This message was deleted by the sender</span></div>`;
     }
 
     // 3. Reactively update any visible Reply Blocks referencing this message
@@ -260,22 +260,22 @@ socket.on('update_requests', (requests) => {
             const div = document.createElement('div');
             // Premium Row Styling
             div.style.padding = '12px 0';
-            div.style.borderBottom = '1px solid rgba(0,0,0,0.05)';
+            div.style.borderBottom = '1px solid var(--border-subtle)';
             div.style.display = 'flex';
             div.style.justifyContent = 'space-between';
             div.style.alignItems = 'center';
 
             div.innerHTML = `
-                <span style="font-weight:500; font-size:15px; color:var(--text-color);">${req.name}</span>
+                <span style="font-weight:500; font-size:15px; color:var(--text-primary);">${req.name}</span>
                 <div style="display:flex; gap:8px;">
                      <button onclick="approve('${req.name}')" 
                         class="approve-btn"
-                        style="background:#25d366 !important; color:white !important; padding:6px 14px !important; border-radius:6px !important; font-size:13px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
+                        style="background:var(--success) !important; color:white !important; padding:6px 14px !important; border-radius:6px !important; font-size:13px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
                         Accept
                      </button>
                     <button onclick="reject('${req.name}')" 
                         class="reject-btn"
-                        style="background:rgba(255, 77, 77, 0.1) !important; color:#ff4d4d !important; padding:6px 14px !important; border-radius:6px !important; font-size:13px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
+                        style="background:transparent !important; border:1px solid var(--danger) !important; color:var(--danger) !important; padding:6px 14px !important; border-radius:6px !important; font-size:13px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
                         Decline
                     </button>
                 </div>
@@ -301,16 +301,16 @@ socket.on('update_members', (members) => {
             const div = document.createElement('div');
             // Consistent Premium Row Styling
             div.style.padding = '12px 0';
-            div.style.borderBottom = '1px solid rgba(0,0,0,0.05)';
+            div.style.borderBottom = '1px solid var(--border-subtle)';
             div.style.display = 'flex';
             div.style.justifyContent = 'space-between';
             div.style.alignItems = 'center';
 
             div.innerHTML = `
-                <span style="font-weight:500; font-size:15px; color:var(--text-color);">${mem.name}</span>
+                <span style="font-weight:500; font-size:15px; color:var(--text-primary);">${mem.name}</span>
                 <button onclick="removeMember('${mem.name}')" 
                     class="remove-btn"
-                    style="background:transparent !important; border:1px solid #ff4d4d !important; color:#ff4d4d !important; padding:5px 12px !important; border-radius:6px !important; font-size:12px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
+                    style="background:transparent !important; border:1px solid var(--danger) !important; color:var(--danger) !important; padding:5px 12px !important; border-radius:6px !important; font-size:12px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
                     Remove
                 </button>
             `;
@@ -692,7 +692,7 @@ function renderMessage(msg) {
     }
 
     const content = msg.deleted ?
-        `<span style="font-style:italic; color:#888;">🚫 This message was deleted by the sender</span>` :
+        `<span style="font-style:italic; color:var(--text-secondary);">🚫 This message was deleted by the sender</span>` :
         `
         ${replyHtml}
         <div class="sender-name">${msg.sender}</div>

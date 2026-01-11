@@ -1,44 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 * {
     box-sizing: border-box;
 }
 
-/* CSS Variables for Theme */
 :root {
-    --bg-color: #e5ddd5;
-    --chat-bg: #efe7dd;
-    --container-bg: #fff;
-    --header-bg: #075e54;
-    --header-text: #fff;
-    --incoming-bg: #fff;
-    --outgoing-bg: #dcf8c6;
-    --text-color: #303030;
-    --secondary-text: #888;
-    --input-bg: #fff;
-    --btn-primary: #128c7e;
-    --btn-hover: #075e54;
+    /* Brand Accent */
+    --accent: #007bff;
+    --accent-glow: rgba(0, 123, 255, 0.2);
+
+    /* Surface Colors */
+    --bg-color: #f0f2f5;
+    --container-bg: #ffffff;
+    --header-bg: #ffffff;
+    --chat-bg: #f0f2f5;
+    --modal-bg: #ffffff;
+    --input-bg: #f0f2f5;
+
+    /* Message Bubbles */
+    --incoming-bg: #ffffff;
+    --outgoing-bg: #e0f2fe;
+    --incoming-border: rgba(0, 0, 0, 0.05);
+    --outgoing-border: rgba(0, 123, 255, 0.1);
+
+    /* Text Colors */
+    --text-primary: #0f172a;
+    --text-secondary: #64748b;
+    --header-text: #0f172a;
+
+    /* Utility Colors */
+    --success: #25d366;
+    --danger: #ff4d4d;
+    --border-subtle: rgba(0, 0, 0, 0.05);
     --shadow: rgba(0, 0, 0, 0.1);
-    --modal-bg: #fff;
+    --selection: rgba(0, 123, 255, 0.1);
+
+    /* UI Elements */
+    --btn-primary: #007bff;
+    --btn-hover: #0056b3;
 }
 
 body.dark-mode {
-    --bg-color: #0f0f0f;
-    --chat-bg: #0b141a;
-    --container-bg: #1f2c34;
-    --header-bg: #1f2c34;
-    --header-text: #e9edef;
-    --incoming-bg: #1f2c34;
-    --outgoing-bg: #005c4b;
-    --text-color: #e9edef;
-    --secondary-text: #8696a0;
-    --input-bg: #2a3942;
-    --btn-primary: #00a884;
-    --btn-hover: #008f6f;
-    --shadow: rgba(0, 0, 0, 0.3);
-    --modal-bg: #2a3942;
+    /* Brand Accent */
+    --accent: #00d4ff;
+    --accent-glow: rgba(0, 212, 255, 0.15);
+
+    /* Utility Colors */
+    --success: #25d366;
+    --danger: #ff4d4d;
+
+    /* Surface Colors */
+    --bg-color: #0c0e12;
+    --container-bg: #151921;
+    --header-bg: #1c222b;
+    --chat-bg: #0c0e12;
+    --modal-bg: #1c222b;
+    --input-bg: #1e252f;
+
+    /* Message Bubbles */
+    --incoming-bg: #1e252f;
+    --outgoing-bg: #004b8d;
+    --incoming-border: rgba(255, 255, 255, 0.05);
+    --outgoing-border: rgba(0, 212, 255, 0.2);
+
+    /* Text Colors */
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --header-text: #f1f5f9;
+
+    /* UI Elements */
+    --btn-primary: #00a3ff;
+    --btn-hover: #00d4ff;
+    --border-subtle: rgba(255, 255, 255, 0.05);
+    --shadow: rgba(0, 0, 0, 0.5);
+    --selection: rgba(0, 163, 255, 0.2);
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background: var(--bg-color);
     margin: 0;
     padding: 0;
@@ -46,7 +85,7 @@ body {
     justify-content: center;
     align-items: center;
     height: 100vh;
-    color: var(--text-color);
+    color: var(--text-primary);
     transition: background 0.3s, color 0.3s;
 }
 
@@ -140,7 +179,8 @@ body {
     justify-content: space-between;
     align-items: center;
     z-index: 5;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 1px 3px var(--shadow);
+    border-bottom: 1px solid var(--border-subtle);
 }
 
 #chat {
@@ -194,34 +234,37 @@ body {
     align-self: flex-start;
     background: var(--incoming-bg);
     border-top-left-radius: 0;
-    box-shadow: 0 1px 1px var(--shadow);
+    box-shadow: 0 1px 2px var(--shadow);
+    border: 1px solid var(--incoming-border);
 }
 
 .outgoing {
     align-self: flex-end;
     background: var(--outgoing-bg);
     border-top-right-radius: 0;
-    box-shadow: 0 1px 1px var(--shadow);
+    box-shadow: 0 1px 2px var(--shadow);
+    border: 1px solid var(--outgoing-border);
+    color: var(--text-primary);
 }
 
 .sender-name {
     font-size: 12px;
     font-weight: bold;
-    color: var(--btn-primary);
+    color: var(--accent);
     margin-bottom: 4px;
 }
 
 .mention {
-    color: #007bff;
-    background: rgba(0, 123, 255, 0.1);
+    color: var(--accent);
+    background: var(--selection);
     padding: 2px 4px;
     border-radius: 4px;
+    font-weight: 600;
 }
 
 #admin-panel {
-    /* Styles moved inline for structure but can verify here */
-    background: var(--input-bg);
-    border-bottom: 1px solid var(--secondary-text);
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--border-subtle);
     padding: 10px;
     z-index: 10;
 }
@@ -229,8 +272,8 @@ body {
 /* End Session Button Styling */
 .end-session-btn {
     background: transparent !important;
-    border: 2px solid #ff4d4d !important;
-    color: #ff4d4d !important;
+    border: 2px solid var(--danger) !important;
+    color: var(--danger) !important;
     font-size: 14px !important;
     font-weight: bold;
     padding: 8px 16px !important;
@@ -241,14 +284,14 @@ body {
 }
 
 .end-session-btn:hover {
-    background: #ff4d4d !important;
+    background: var(--danger) !important;
     color: white !important;
 }
 
 .logout-self-btn {
     background: transparent !important;
-    border: 2px solid var(--btn-primary) !important;
-    color: var(--btn-primary) !important;
+    border: 2px solid var(--accent) !important;
+    color: var(--accent) !important;
     font-size: 14px !important;
     font-weight: bold;
     padding: 8px 16px !important;
@@ -259,8 +302,9 @@ body {
 }
 
 .logout-self-btn:hover {
-    background: var(--btn-primary) !important;
+    background: var(--accent) !important;
     color: white !important;
+    box-shadow: 0 0 15px var(--accent-glow);
 }
 
 .input-area {
@@ -269,27 +313,28 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    border-top: 1px solid var(--border-subtle);
 }
 
 input {
     flex: 1;
     padding: 12px 15px;
     border-radius: 25px;
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--border-subtle);
     background: var(--input-bg);
-    color: var(--text-color);
+    color: var(--text-primary);
     font-size: 15px;
     outline: none;
+    transition: border-color 0.2s;
 }
 
 input:focus {
-    border-color: var(--btn-primary);
+    border-color: var(--accent);
 }
 
 button {
     background: transparent;
-    color: var(--secondary-text);
+    color: var(--text-secondary);
     border: none;
     cursor: pointer;
     font-size: 22px;
@@ -308,8 +353,8 @@ button {
 }
 
 button:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: var(--btn-primary);
+    background: var(--border-subtle);
+    color: var(--accent);
 }
 
 #login-area button,
@@ -330,8 +375,9 @@ button:hover {
 }
 
 .cancel-btn {
-    background: #ccc !important;
-    color: black !important;
+    background: var(--input-bg) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-subtle) !important;
     margin-left: 10px;
     border-radius: 5px;
     padding: 10px 20px;
@@ -339,9 +385,8 @@ button:hover {
     width: auto;
 }
 
-body.dark-mode .cancel-btn {
-    background: #444 !important;
-    color: #ddd !important;
+.cancel-btn:hover {
+    background: var(--border-subtle) !important;
 }
 
 .emoji-btn {
@@ -367,6 +412,7 @@ button[onclick="send()"] svg {
 button[onclick="send()"]:hover {
     background: var(--btn-hover);
     transform: scale(1.08);
+    box-shadow: 0 0 10px var(--accent-glow);
 }
 
 .emoji-picker {
@@ -374,11 +420,11 @@ button[onclick="send()"]:hover {
     bottom: 70px;
     left: 10px;
     right: 10px;
-    background: var(--container-bg);
-    border: 1px solid var(--secondary-text);
-    border-radius: 8px;
-    box-shadow: 0 4px 10px var(--shadow);
-    padding: 10px;
+    background: var(--modal-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px var(--shadow);
+    padding: 15px;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(35px, 1fr));
     gap: 5px;
@@ -388,6 +434,7 @@ button[onclick="send()"]:hover {
     overflow-y: auto;
     width: auto;
     max-width: 400px;
+    backdrop-filter: blur(10px);
 }
 
 @media (min-width: 600px) {
@@ -400,11 +447,12 @@ button[onclick="send()"]:hover {
 .emoji-picker span {
     cursor: pointer;
     padding: 5px;
-    border-radius: 4px;
+    border-radius: 8px;
+    transition: background 0.2s;
 }
 
 .emoji-picker span:hover {
-    background: var(--shadow);
+    background: var(--border-subtle);
 }
 
 .media-content {
@@ -419,7 +467,7 @@ button[onclick="send()"]:hover {
     position: absolute;
     top: -8px;
     right: -8px;
-    background: #ff4d4d;
+    background: var(--danger);
     color: white;
     width: 18px;
     height: 18px;
@@ -457,20 +505,23 @@ button[onclick="send()"]:hover {
 /* Modal Styling */
 .modal-content {
     background: var(--modal-bg);
-    padding: 20px;
-    border-radius: 10px;
+    padding: 25px;
+    border-radius: 16px;
     text-align: center;
-    color: var(--text-color);
-    box-shadow: 0 4px 15px var(--shadow);
+    color: var(--text-primary);
+    box-shadow: 0 10px 40px var(--shadow);
+    border: 1px solid var(--border-subtle);
+    max-width: 400px;
 }
 
 #password-modal input {
-    margin: 15px 0;
-    width: 80%;
-    border-radius: 5px;
+    margin: 20px 0;
+    width: 90%;
+    border-radius: 8px;
     background: var(--input-bg);
-    color: var(--text-color);
-    border: 1px solid var(--secondary-text);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    padding: 12px;
 }
 
 /* Image Editor Modal Styles */
@@ -528,17 +579,17 @@ button[onclick="send()"]:hover {
 }
 
 .primary-action {
-    background: #25d366 !important;
+    background: var(--success) !important;
     color: white !important;
 }
 
 .secondary-action {
-    background: #34b7f1 !important;
+    background: var(--accent) !important;
     color: white !important;
 }
 
 .danger-action {
-    background: #ff4d4d !important;
+    background: var(--danger) !important;
     color: white !important;
 }
 
@@ -568,26 +619,30 @@ button[onclick="send()"]:hover {
 
 /* Context Menu Styling */
 .context-menu {
-    background: var(--container-bg);
-    border: 1px solid var(--secondary-text);
-    border-radius: 8px;
-    box-shadow: 0 4px 10px var(--shadow);
-    padding: 5px 0;
-    min-width: 160px;
+    background: var(--modal-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px var(--shadow);
+    padding: 8px 0;
+    min-width: 180px;
     z-index: 5000;
+    backdrop-filter: blur(10px);
 }
 
 .context-menu-item {
-    padding: 10px 15px;
+    padding: 12px 20px;
     cursor: pointer;
     font-size: 14px;
-    color: var(--text-color);
-    transition: background 0.2s;
+    color: var(--text-primary);
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .context-menu-item:hover {
-    background: rgba(255, 77, 77, 0.1);
-    color: #ff4d4d;
+    background: var(--border-subtle);
+    color: var(--accent);
 }
 
 /* Undo Toast Styling */
@@ -596,17 +651,18 @@ button[onclick="send()"]:hover {
     bottom: 80px;
     left: 50%;
     transform: translateX(-50%);
-    background: #323232;
-    color: white;
-    padding: 12px 20px;
-    border-radius: 4px;
+    background: var(--header-bg);
+    color: var(--text-primary);
+    padding: 12px 24px;
+    border-radius: 30px;
     display: flex;
     align-items: center;
     gap: 20px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 24px var(--shadow);
     z-index: 2000;
     font-size: 14px;
-    animation: fadeIn 0.3s ease;
+    border: 1px solid var(--border-subtle);
+    animation: slideUp 0.3s ease;
 }
 
 .approve-btn:hover {
@@ -621,7 +677,7 @@ button[onclick="send()"]:hover {
 
 .undo-toast button {
     background: transparent;
-    color: #25d366;
+    color: var(--success);
     border: none;
     font-weight: bold;
     cursor: pointer;
@@ -633,16 +689,15 @@ button[onclick="send()"]:hover {
 
 /* Reply Preview (Above Input) */
 .reply-preview {
-    background: var(--container-bg);
-    border-left: 5px solid var(--btn-primary);
-    padding: 8px 12px;
+    background: var(--header-bg);
+    border-left: 5px solid var(--accent);
+    padding: 12px 15px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    border-top: 1px solid var(--border-subtle);
     animation: slideUp 0.2s ease-out;
     cursor: pointer;
-    /* Provide feedback that its interactive/dismissible */
 }
 
 /* Ensure easy tap on mobile */
@@ -661,20 +716,20 @@ button[onclick="send()"]:hover {
 }
 
 .reply-name {
-    color: var(--btn-primary);
+    color: var(--accent);
     font-weight: bold;
     margin-bottom: 2px;
 }
 
 .reply-text {
-    color: var(--secondary-text);
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .close-reply {
-    color: var(--secondary-text);
+    color: var(--text-secondary);
     background: transparent;
     border: none;
     font-size: 24px;
@@ -686,10 +741,10 @@ button[onclick="send()"]:hover {
 
 /* Reply Block inside Message Bubble */
 .reply-block {
-    background: rgba(0, 0, 0, 0.05);
-    border-left: 4px solid var(--btn-primary);
+    background: var(--selection);
+    border-left: 4px solid var(--accent);
     border-radius: 4px;
-    padding: 5px 8px;
+    padding: 6px 10px;
     margin-bottom: 5px;
     font-size: 12px;
     cursor: pointer;
@@ -701,12 +756,12 @@ button[onclick="send()"]:hover {
 
 .reply-block-name {
     font-weight: bold;
-    color: var(--btn-primary);
+    color: var(--accent);
     margin-bottom: 2px;
 }
 
 .reply-block-text {
-    color: var(--text-color);
+    color: var(--text-primary);
     opacity: 0.8;
     white-space: nowrap;
     overflow: hidden;
@@ -720,31 +775,29 @@ body.dark-mode .reply-block {
 /* Mention Popup */
 .mention-popup {
     position: fixed;
-    /* Fixed to float over content */
-    background: var(--container-bg);
-    border: 1px solid var(--secondary-text);
-    border-radius: 8px;
-    box-shadow: 0 -4px 10px var(--shadow);
+    background: var(--modal-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px var(--shadow);
     z-index: 200;
-    max-height: 150px;
+    max-height: 200px;
     overflow-y: auto;
     width: 200px;
     display: none;
+    backdrop-filter: blur(10px);
 }
 
 .mention-popup div {
-    padding: 10px;
+    padding: 12px 15px;
     cursor: pointer;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-    color: var(--text-color);
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    transition: background 0.2s;
 }
 
 .mention-popup div:hover {
-    background: rgba(0, 0, 0, 0.05);
-}
-
-body.dark-mode .mention-popup div:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--border-subtle);
+    color: var(--accent);
 }
 
 @keyframes slideUp {
@@ -801,8 +854,8 @@ body.dark-mode .mention-popup div:hover {
     z-index: 100 !important;
     animation: spotlight-in 1.5s cubic-bezier(0.4, 0, 0.2, 1);
     background-color: var(--container-bg) !important;
-    /* Ensure it stands out if it was translucent */
-    border: 1px solid var(--btn-primary);
+    border: 1px solid var(--accent);
+    box-shadow: 0 0 20px var(--accent-glow);
 }
 
 /* Dimming other messages */
