@@ -57,17 +57,10 @@ if (localStorage.getItem('theme') === 'dark') {
     document.body.classList.add('dark-mode');
 }
 
-const existingUserId = localStorage.getItem('chat_userid');
-const existingToken = localStorage.getItem('chat_token');
-const existingName = localStorage.getItem('chat_name');
-
-if (existingUserId || (existingToken && existingName)) {
-    socket.emit('join_request', {
-        name: existingName,
-        token: existingToken,
-        userId: existingUserId
-    });
-}
+// Global reconnect variables
+const storedUserId = localStorage.getItem('chat_userid');
+const storedToken = localStorage.getItem('chat_token');
+const storedName = localStorage.getItem('chat_name');
 
 function toggleTheme() {
     document.body.classList.toggle('dark-mode');
@@ -139,8 +132,14 @@ let sessionBtn = null;
 // --- Socket Events ---
 socket.on('connect', () => {
     console.log('Connected');
-    if (existingToken && existingName && !currentUser) {
-        socket.emit('join_request', { name: existingName, token: existingToken });
+
+    // Auto-reconnect if we have any identity
+    if ((storedUserId || storedToken) && !currentUser) {
+        socket.emit('join_request', {
+            name: storedName,
+            token: storedToken,
+            userId: storedUserId
+        });
     }
 });
 
@@ -340,13 +339,16 @@ socket.on('user_list', (users) => {
 
 socket.on('admin_disconnected', () => {
     alert("Admin ended the session.");
-    localStorage.clear();
     location.reload();
 });
 
-socket.on('session_ended', () => {
-    alert("Session ended.");
-    localStorage.clear();
+socket.on('session_ended', (choice) => {
+    if (choice === 'save') {
+        alert("Session saved and ended. You will be automatically reconnected when the server is back.");
+    } else {
+        alert("Session wiped and ended.");
+        localStorage.clear();
+    }
     location.reload();
 });
 
