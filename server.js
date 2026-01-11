@@ -125,6 +125,12 @@ io.on('connection', (socket) => {
         if (effectiveId && sessions[effectiveId]) {
             const session = sessions[effectiveId];
 
+            if (session.removed) {
+                socket.emit('error_message', 'You were removed from the previous session.');
+                socket.emit('clear_token');
+                return;
+            }
+
             // Update socket ID
             const alreadyConnected = session.connected;
             session.socketId = socket.id;
@@ -166,7 +172,7 @@ io.on('connection', (socket) => {
 
             // If admin reconnects, they need requests update
             if (session.isAdmin) {
-                const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
+                const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin && !s.removed).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
                 socket.emit('update_requests', pending);
 
                 const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin, userId: s.userId }));
@@ -213,7 +219,7 @@ io.on('connection', (socket) => {
                 socket.emit('load_messages', messages);
 
                 // Send pending requests to Admin
-                const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId }));
+                const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin && !s.removed).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
                 socket.emit('update_requests', pending);
 
                 io.emit('user_list', getActiveUserNames());
@@ -255,7 +261,7 @@ io.on('connection', (socket) => {
         const adminSession = Object.values(sessions).find(s => s.isAdmin && s.connected);
         if (adminSession) {
             // Better: send full list
-            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
+            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin && !s.removed).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
             io.to(adminSession.socketId).emit('update_requests', pending);
 
             // Also send members just in case but usually only requests change here
@@ -294,17 +300,20 @@ io.on('connection', (socket) => {
                     io.to(targetSession.socketId).emit('clear_token'); // Tell client to forget token
                 }
                 delete sessions[targetSession.userId];
-            } else if (data.action === 'remove') { // NEW: Remove Member
+            } else if (data.action === 'remove') { // NEW: Remove Member (Persistent)
                 if (targetSession.connected && targetSession.socketId) {
                     io.to(targetSession.socketId).emit('user_removed');
                     io.to(targetSession.socketId).emit('clear_token');
                 }
-                delete sessions[targetSession.userId];
-                saveData(); // Persist removal
+                targetSession.approved = false;
+                targetSession.connected = false;
+                targetSession.removed = true; // Mark as persistently removed
+                targetSession.socketId = null;
+                saveData(); // Persist removal state
             }
 
             // Update Admin UI
-            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
+            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin && !s.removed).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
 
             // Send updated lists to Admin
             socket.emit('update_requests', pending);

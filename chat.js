@@ -208,6 +208,7 @@ socket.on('error_message', (msg) => {
 socket.on('clear_token', () => {
     localStorage.removeItem('chat_token');
     localStorage.removeItem('chat_name');
+    localStorage.removeItem('chat_userid');
 });
 
 socket.on('load_messages', (messages) => {
