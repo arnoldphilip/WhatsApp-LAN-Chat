@@ -57,10 +57,16 @@ if (localStorage.getItem('theme') === 'dark') {
     document.body.classList.add('dark-mode');
 }
 
+const existingUserId = localStorage.getItem('chat_userid');
 const existingToken = localStorage.getItem('chat_token');
 const existingName = localStorage.getItem('chat_name');
-if (existingToken && existingName) {
-    socket.emit('join_request', { name: existingName, token: existingToken });
+
+if (existingUserId || (existingToken && existingName)) {
+    socket.emit('join_request', {
+        name: existingName,
+        token: existingToken,
+        userId: existingUserId
+    });
 }
 
 function toggleTheme() {
@@ -144,6 +150,7 @@ socket.on('login_success', (data) => {
 
     localStorage.setItem('chat_name', data.name);
     localStorage.setItem('chat_token', data.token);
+    if (data.userId) localStorage.setItem('chat_userid', data.userId);
 
     loginArea.style.display = 'none';
     waitingScreen.style.display = 'none';
@@ -175,6 +182,7 @@ socket.on('waiting_approval_with_token', (token) => {
     waitingScreen.style.display = 'block';
     localStorage.setItem('chat_name', document.getElementById('name').value.trim());
     localStorage.setItem('chat_token', token);
+    localStorage.setItem('chat_userid', token); // token and userId are initially the same
 });
 
 
@@ -182,6 +190,7 @@ socket.on('access_denied', () => {
     alert("You are not allowed to join this chat.");
     localStorage.removeItem('chat_token');
     localStorage.removeItem('chat_name');
+    localStorage.removeItem('chat_userid');
     location.reload();
 });
 
@@ -189,6 +198,7 @@ socket.on('user_removed', () => {
     alert("You have been removed from the chat.");
     localStorage.removeItem('chat_token');
     localStorage.removeItem('chat_name');
+    localStorage.removeItem('chat_userid');
     location.reload();
 });
 
@@ -268,12 +278,12 @@ socket.on('update_requests', (requests) => {
             div.innerHTML = `
                 <span style="font-weight:500; font-size:15px; color:var(--text-primary);">${req.name}</span>
                 <div style="display:flex; gap:8px;">
-                     <button onclick="approve('${req.name}')" 
+                     <button onclick="approve('${req.userId || req.name}')" 
                         class="approve-btn"
                         style="background:var(--success) !important; color:white !important; padding:6px 14px !important; border-radius:6px !important; font-size:13px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
                         Accept
                      </button>
-                    <button onclick="reject('${req.name}')" 
+                    <button onclick="reject('${req.userId || req.name}')" 
                         class="reject-btn"
                         style="background:transparent !important; border:1px solid var(--danger) !important; color:var(--danger) !important; padding:6px 14px !important; border-radius:6px !important; font-size:13px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
                         Decline
@@ -308,7 +318,7 @@ socket.on('update_members', (members) => {
 
             div.innerHTML = `
                 <span style="font-weight:500; font-size:15px; color:var(--text-primary);">${mem.name}</span>
-                <button onclick="removeMember('${mem.name}')" 
+                <button onclick="removeMember('${mem.userId || mem.name}', '${mem.name}')" 
                     class="remove-btn"
                     style="background:transparent !important; border:1px solid var(--danger) !important; color:var(--danger) !important; padding:5px 12px !important; border-radius:6px !important; font-size:12px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
                     Remove
@@ -349,7 +359,8 @@ window.toggleAdminPanel = function () {
 function join() {
     const name = document.getElementById('name').value.trim();
     if (name) {
-        socket.emit('join_request', { name });
+        const userId = localStorage.getItem('chat_userid');
+        socket.emit('join_request', { name, userId });
     }
 }
 
@@ -357,7 +368,8 @@ function submitPassword() {
     const name = document.getElementById('name').value.trim();
     const pass = passwordInput.value.trim();
     if (pass) {
-        socket.emit('join_request', { name, password: pass });
+        const userId = localStorage.getItem('chat_userid');
+        socket.emit('join_request', { name, password: pass, userId });
     }
 }
 
@@ -366,17 +378,17 @@ function closePasswordModal() {
     passwordInput.value = '';
 }
 
-window.approve = function (name) { // Make global
-    socket.emit('admin_action', { action: 'approve', name });
+window.approve = function (id) { // Make global
+    socket.emit('admin_action', { action: 'approve', userId: id });
 }
 
-window.reject = function (name) {
-    socket.emit('admin_action', { action: 'reject', name });
+window.reject = function (id) {
+    socket.emit('admin_action', { action: 'reject', userId: id });
 }
 
-window.removeMember = function (name) {
-    if (confirm(`Are you sure you want to remove ${name} from the chat?`)) {
-        socket.emit('admin_action', { action: 'remove', name });
+window.removeMember = function (id, name) {
+    if (confirm(`Are you sure you want to remove ${name || id} from the chat?`)) {
+        socket.emit('admin_action', { action: 'remove', userId: id });
     }
 }
 

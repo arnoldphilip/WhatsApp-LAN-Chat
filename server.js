@@ -61,12 +61,26 @@ function loadData() {
         try {
             const data = JSON.parse(fs.readFileSync(DATA_FILE));
             messages = data.messages || [];
-            sessions = data.sessions || {};
+            const loadedSessions = data.sessions || {};
 
-            // On server restart, all sessions are initially disconnected
-            Object.values(sessions).forEach(s => {
-                s.connected = false;
-                s.socketId = null;
+            // Migration & Initialization: Ensure sessions are keyed by token (userId)
+            sessions = {};
+            Object.values(loadedSessions).forEach(s => {
+                const id = s.token || s.userId; // Migrate from old or use existing
+                if (id) {
+                    s.userId = id;
+                    s.connected = false;
+                    s.socketId = null;
+                    sessions[id] = s;
+                } else if (s.name) {
+                    // Fallback for very old format if necessary
+                    const fallbackId = uuidv4();
+                    s.userId = fallbackId;
+                    s.token = fallbackId;
+                    s.connected = false;
+                    s.socketId = null;
+                    sessions[fallbackId] = s;
+                }
             });
         } catch (e) { console.error(e); }
     }
@@ -101,55 +115,57 @@ io.on('connection', (socket) => {
 
     // 1. Join Request
     socket.on('join_request', (data) => {
-        // data: { name, password (optional), token (optional) }
-        let { name, password, token } = data;
-        const normalizedName = name.trim();
+        // data: { name, password (optional), token (optional), userId (optional) }
+        let { name, password, token, userId } = data;
+        const normalizedName = name ? name.trim() : "";
         const lowerName = normalizedName.toLowerCase();
 
-        // RECONNECTION ATTEMPT
-        if (token) {
-            // Find session with this token
-            const existingSessionUser = Object.keys(sessions).find(u => sessions[u].token === token);
-            if (existingSessionUser) {
-                // Determine if valid reconnection
-                const session = sessions[existingSessionUser];
+        // RECONNECTION ATTEMPT (Lookup by stable userId)
+        const effectiveId = userId || token;
+        if (effectiveId && sessions[effectiveId]) {
+            const session = sessions[effectiveId];
 
-                // Update socket ID
-                const alreadyConnected = session.connected;
-                session.socketId = socket.id;
-                session.connected = true;
+            // Update socket ID
+            const alreadyConnected = session.connected;
+            session.socketId = socket.id;
+            session.connected = true;
 
-                // Logging: Only log reconnects if they were actually offline
-                if (!alreadyConnected && (session.approved || session.isAdmin)) {
-                    console.log(`User reconnected: ${session.name} (${socket.id})`);
-                }
-
-                // If it was the admin
-                if (session.isAdmin) adminActive = true;
-
-                socket.emit('login_success', {
-                    name: session.name,
-                    isAdmin: session.isAdmin,
-                    token: token
-                });
-                socket.emit('load_messages', messages);
-
-                if (!session.approved) {
-                    socket.emit('waiting_approval_with_token', token);
-                }
-
-                // If admin reconnects, they need requests update
-                if (session.isAdmin) {
-                    const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId }));
-                    socket.emit('update_requests', pending);
-
-                    const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin }));
-                    socket.emit('update_members', members);
-                }
-
-                io.emit('user_list', getActiveUserNames()); // Update list for mentions
-                return;
+            // Update name if provided (editable display name)
+            if (normalizedName && !session.isAdmin) {
+                session.name = normalizedName;
             }
+
+            // Logging: Only log reconnects if they were actually offline
+            if (!alreadyConnected && (session.approved || session.isAdmin)) {
+                console.log(`User reconnected: ${session.name} (${socket.id})`);
+            }
+
+            // If it was the admin
+            if (session.isAdmin) adminActive = true;
+
+            socket.emit('login_success', {
+                name: session.name,
+                isAdmin: session.isAdmin,
+                token: token,
+                userId: session.userId
+            });
+            socket.emit('load_messages', messages);
+
+            if (!session.approved) {
+                socket.emit('waiting_approval_with_token', token);
+            }
+
+            // If admin reconnects, they need requests update
+            if (session.isAdmin) {
+                const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
+                socket.emit('update_requests', pending);
+
+                const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin, userId: s.userId }));
+                socket.emit('update_members', members);
+            }
+
+            io.emit('user_list', getActiveUserNames()); // Update list for mentions
+            return;
         }
 
         // NEW LOGIN
@@ -166,16 +182,14 @@ io.on('connection', (socket) => {
                 // If Admin already active? 
                 // "There must be only one person with a name".
                 // If Admin session exists and is connected:
-                if (sessions[normalizedName] && sessions[normalizedName].connected) {
-                    socket.emit('error_message', 'Admin is already logged in on another device.');
-                    return;
-                }
-
                 // Create/Update Admin Session
-                const tokenToUse = sessions[normalizedName] ? sessions[normalizedName].token : uuidv4();
-                sessions[normalizedName] = {
+                const adminSession = Object.values(sessions).find(s => s.isAdmin);
+                const idToUse = adminSession ? adminSession.userId : uuidv4();
+
+                sessions[idToUse] = {
+                    userId: idToUse,
                     name: "Admin", // Force proper casing
-                    token: tokenToUse,
+                    token: idToUse,
                     approved: true, // Admin is always approved
                     isAdmin: true,
                     connected: true,
@@ -184,9 +198,9 @@ io.on('connection', (socket) => {
                 adminActive = true;
                 saveData(); // Persist new admin session
 
-                console.log(`Admin joined: ${normalizedName} (${socket.id})`);
+                console.log(`Admin joined: Admin (${socket.id})`);
 
-                socket.emit('login_success', { name: "Admin", isAdmin: true, token: tokenToUse });
+                socket.emit('login_success', { name: "Admin", isAdmin: true, token: idToUse, userId: idToUse });
                 socket.emit('load_messages', messages);
 
                 // Send pending requests to Admin
@@ -220,10 +234,11 @@ io.on('connection', (socket) => {
         }
 
         // New Session
-        const newToken = uuidv4();
-        sessions[normalizedName] = {
+        const id = uuidv4();
+        sessions[id] = {
+            userId: id,
             name: normalizedName,
-            token: newToken,
+            token: id,
             approved: false,
             isAdmin: false,
             connected: true,
@@ -235,15 +250,15 @@ io.on('connection', (socket) => {
         const adminSession = Object.values(sessions).find(s => s.isAdmin && s.connected);
         if (adminSession) {
             // Better: send full list
-            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId }));
+            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
             io.to(adminSession.socketId).emit('update_requests', pending);
 
             // Also send members just in case but usually only requests change here
-            const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin }));
+            const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin, userId: s.userId }));
             io.to(adminSession.socketId).emit('update_members', members);
         }
 
-        socket.emit('waiting_approval_with_token', newToken); // Client saves token
+        socket.emit('waiting_approval_with_token', id); // Client saves token
     });
 
     socket.on('admin_action', (data) => {
@@ -251,8 +266,8 @@ io.on('connection', (socket) => {
         const adminSession = Object.values(sessions).find(s => s.socketId === socket.id && s.isAdmin);
         if (!adminSession) return;
 
-        const targetName = data.name; // Use name as ID now since socketId changes
-        const targetSession = sessions[targetName];
+        const targetId = data.userId || data.name; // userId is primary, name is fallback for transition
+        const targetSession = sessions[targetId] || Object.values(sessions).find(s => s.name === targetId);
 
         if (targetSession) {
             if (data.action === 'approve') {
@@ -262,7 +277,8 @@ io.on('connection', (socket) => {
                     io.to(targetSession.socketId).emit('login_success', {
                         name: targetSession.name,
                         isAdmin: false,
-                        token: targetSession.token
+                        token: targetSession.token,
+                        userId: targetSession.userId
                     });
                     io.to(targetSession.socketId).emit('load_messages', messages);
                 }
@@ -272,23 +288,23 @@ io.on('connection', (socket) => {
                     io.to(targetSession.socketId).emit('access_denied');
                     io.to(targetSession.socketId).emit('clear_token'); // Tell client to forget token
                 }
-                delete sessions[targetName];
+                delete sessions[targetSession.userId];
             } else if (data.action === 'remove') { // NEW: Remove Member
                 if (targetSession.connected && targetSession.socketId) {
                     io.to(targetSession.socketId).emit('user_removed');
                     io.to(targetSession.socketId).emit('clear_token');
                 }
-                delete sessions[targetName];
+                delete sessions[targetSession.userId];
                 saveData(); // Persist removal
             }
 
             // Update Admin UI
-            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId }));
+            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
 
             // Send updated lists to Admin
             socket.emit('update_requests', pending);
 
-            const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin }));
+            const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin, userId: s.userId }));
             socket.emit('update_members', members);
 
             io.emit('user_list', getActiveUserNames());
@@ -354,7 +370,7 @@ io.on('connection', (socket) => {
         if (session) {
             // Remove from sessions so name can be reused and no auto-reconnect
             if (session.isAdmin) adminActive = false;
-            delete sessions[session.name];
+            delete sessions[session.userId];
             saveData(); // Persist logout
 
 
