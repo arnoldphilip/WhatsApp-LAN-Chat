@@ -2,12 +2,16 @@ const socket = io();
 
 // State
 let currentUser = null;
-let currentUserId = null;
 let isAdmin = false;
 let replyToMessageId = null;
 let userList = [];
 let currentCropper = null;
 let pendingFile = null;
+let localUserId = localStorage.getItem('chat_userId');
+if (!localUserId) {
+    localUserId = 'u-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now().toString(36);
+    localStorage.setItem('chat_userId', localUserId);
+}
 
 // DOM Elements
 const loginArea = document.getElementById('login-area');
@@ -58,10 +62,11 @@ if (localStorage.getItem('theme') === 'dark') {
     document.body.classList.add('dark-mode');
 }
 
-// Global reconnect variables
-const storedUserId = localStorage.getItem('chat_userid');
-const storedToken = localStorage.getItem('chat_token');
-const storedName = localStorage.getItem('chat_name');
+const existingToken = localStorage.getItem('chat_token');
+const existingName = localStorage.getItem('chat_name');
+if (existingToken && existingName) {
+    socket.emit('join_request', { name: existingName, token: existingToken, userId: localUserId });
+}
 
 function toggleTheme() {
     document.body.classList.toggle('dark-mode');
@@ -104,7 +109,8 @@ window.closeLogoutModal = function () {
 
 window.logoutSelf = function () {
     socket.emit('logout_self');
-    localStorage.clear();
+    localStorage.removeItem('chat_token');
+    localStorage.removeItem('chat_name');
     location.reload();
 }
 
@@ -133,25 +139,17 @@ let sessionBtn = null;
 // --- Socket Events ---
 socket.on('connect', () => {
     console.log('Connected');
-
-    // Auto-reconnect if we have any identity
-    if ((storedUserId || storedToken) && !currentUser) {
-        socket.emit('join_request', {
-            name: storedName,
-            token: storedToken,
-            userId: storedUserId
-        });
+    if (existingToken && existingName && !currentUser) {
+        socket.emit('join_request', { name: existingName, token: existingToken });
     }
 });
 
 socket.on('login_success', (data) => {
     currentUser = data.name;
-    currentUserId = data.userId;
     isAdmin = data.isAdmin;
 
     localStorage.setItem('chat_name', data.name);
     localStorage.setItem('chat_token', data.token);
-    if (data.userId) localStorage.setItem('chat_userid', data.userId);
 
     loginArea.style.display = 'none';
     waitingScreen.style.display = 'none';
@@ -183,7 +181,6 @@ socket.on('waiting_approval_with_token', (token) => {
     waitingScreen.style.display = 'block';
     localStorage.setItem('chat_name', document.getElementById('name').value.trim());
     localStorage.setItem('chat_token', token);
-    localStorage.setItem('chat_userid', token); // token and userId are initially the same
 });
 
 
@@ -191,15 +188,13 @@ socket.on('access_denied', () => {
     alert("You are not allowed to join this chat.");
     localStorage.removeItem('chat_token');
     localStorage.removeItem('chat_name');
-    localStorage.removeItem('chat_userid');
     location.reload();
 });
 
-socket.on('user_removed', () => {
-    alert("You have been removed from the chat.");
+socket.on('user_removed', (reason) => {
+    alert(reason || "You have been removed from the chat.");
     localStorage.removeItem('chat_token');
     localStorage.removeItem('chat_name');
-    localStorage.removeItem('chat_userid');
     location.reload();
 });
 
@@ -210,7 +205,6 @@ socket.on('error_message', (msg) => {
 socket.on('clear_token', () => {
     localStorage.removeItem('chat_token');
     localStorage.removeItem('chat_name');
-    localStorage.removeItem('chat_userid');
 });
 
 socket.on('load_messages', (messages) => {
@@ -280,12 +274,12 @@ socket.on('update_requests', (requests) => {
             div.innerHTML = `
                 <span style="font-weight:500; font-size:15px; color:var(--text-primary);">${req.name}</span>
                 <div style="display:flex; gap:8px;">
-                     <button onclick="approve('${req.userId || req.name}')" 
+                     <button onclick="approve('${req.userId}')" 
                         class="approve-btn"
                         style="background:var(--success) !important; color:white !important; padding:6px 14px !important; border-radius:6px !important; font-size:13px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
                         Accept
                      </button>
-                    <button onclick="reject('${req.userId || req.name}')" 
+                    <button onclick="reject('${req.userId}')" 
                         class="reject-btn"
                         style="background:transparent !important; border:1px solid var(--danger) !important; color:var(--danger) !important; padding:6px 14px !important; border-radius:6px !important; font-size:13px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
                         Decline
@@ -320,7 +314,7 @@ socket.on('update_members', (members) => {
 
             div.innerHTML = `
                 <span style="font-weight:500; font-size:15px; color:var(--text-primary);">${mem.name}</span>
-                <button onclick="removeMember('${mem.userId || mem.name}', '${mem.name}')" 
+                <button onclick="removeMember('${mem.userId}', '${mem.name}')" 
                     class="remove-btn"
                     style="background:transparent !important; border:1px solid var(--danger) !important; color:var(--danger) !important; padding:5px 12px !important; border-radius:6px !important; font-size:12px !important; font-weight:600 !important; width:auto !important; height:auto !important;">
                     Remove
@@ -342,16 +336,13 @@ socket.on('user_list', (users) => {
 
 socket.on('admin_disconnected', () => {
     alert("Admin ended the session.");
+    localStorage.clear();
     location.reload();
 });
 
-socket.on('session_ended', (choice) => {
-    if (choice === 'save') {
-        alert("Session saved and ended. You will be automatically reconnected when the server is back.");
-    } else {
-        alert("Session wiped and ended.");
-        localStorage.clear();
-    }
+socket.on('session_ended', () => {
+    alert("Session ended.");
+    localStorage.clear();
     location.reload();
 });
 
@@ -364,8 +355,7 @@ window.toggleAdminPanel = function () {
 function join() {
     const name = document.getElementById('name').value.trim();
     if (name) {
-        const userId = localStorage.getItem('chat_userid');
-        socket.emit('join_request', { name, userId });
+        socket.emit('join_request', { name, userId: localUserId });
     }
 }
 
@@ -373,8 +363,7 @@ function submitPassword() {
     const name = document.getElementById('name').value.trim();
     const pass = passwordInput.value.trim();
     if (pass) {
-        const userId = localStorage.getItem('chat_userid');
-        socket.emit('join_request', { name, password: pass, userId });
+        socket.emit('join_request', { name, password: pass, userId: localUserId });
     }
 }
 
@@ -383,17 +372,17 @@ function closePasswordModal() {
     passwordInput.value = '';
 }
 
-window.approve = function (id) { // Make global
-    socket.emit('admin_action', { action: 'approve', userId: id });
+window.approve = function (userId) {
+    socket.emit('admin_action', { action: 'approve', userId });
 }
 
-window.reject = function (id) {
-    socket.emit('admin_action', { action: 'reject', userId: id });
+window.reject = function (userId) {
+    socket.emit('admin_action', { action: 'reject', userId });
 }
 
-window.removeMember = function (id, name) {
-    if (confirm(`Are you sure you want to remove ${name || id} from the chat?`)) {
-        socket.emit('admin_action', { action: 'remove', userId: id });
+window.removeMember = function (userId, name) {
+    if (confirm(`Are you sure you want to remove ${name} from the chat?`)) {
+        socket.emit('admin_action', { action: 'remove', userId });
     }
 }
 
@@ -673,13 +662,7 @@ function showMentionPopup(matches, atIndex) {
 function renderMessage(msg) {
     const li = document.createElement('li');
     li.id = `msg-${msg.id}`;
-
-    // Identity-Aware Alignment logic
-    // We check senderUserId if available (new format), else fallback to senderId (old format)
-    const isSelf = (msg.senderUserId && msg.senderUserId === currentUserId) ||
-        (msg.senderId && msg.senderId === localStorage.getItem('chat_token'));
-
-    li.className = isSelf ? 'outgoing' : 'incoming';
+    li.className = msg.senderUserId === localUserId ? 'outgoing' : 'incoming';
 
     let formattedText = (msg.text || '').replace(/@(\w+)/g, '<span class="mention">@$1</span>');
 
@@ -733,9 +716,7 @@ function renderMessage(msg) {
             e.preventDefault();
             messageToDeleteId = msg.id; // Using this as 'Selected Message ID' for simplicity
 
-            const isOwner = (msg.senderUserId && msg.senderUserId === currentUserId) ||
-                (msg.senderId && msg.senderId === localStorage.getItem('chat_token'));
-
+            const isOwner = msg.senderUserId === localUserId;
             // Show/Hide Delete Option based on ownership
             const deleteOption = document.getElementById('ctx-delete');
             if (deleteOption) deleteOption.style.display = isOwner ? 'block' : 'none';

@@ -26,10 +26,11 @@ const UPLOAD_DIR = path.join(__dirname, 'uploads');
 // We also need to map tokens to users to handle reconnection.
 // But socket.id changes on reconnect. So user data should ideally be keyed by 'token' or 'name'.
 // Let's use 'name' as unique key for simplicity in this strict environment, or separate 'sessions'.
-// Structure: sessions = { [name]: { token, approved, isAdmin, connected: boolean, socketId: null } }
+// sessions = { [userId]: { name, token, approved, isAdmin, connected: boolean, socketId: null } }
 let sessions = {};
+let removedUsers = []; // List of userIds marked as removed
 let messages = [];
-let requests = []; // { name, socketId } (stores pending socketIds)
+let requests = []; // { name, socketId, userId } (stores pending sockets)
 // adminName is fixed to 'Admin' by requirement if password matches, or just track who is admin.
 // REQUIREMENT: "Admin" (case insensitive) -> requires password.
 // REQUIREMENT: First user is admin? The prompt implies "if in the name i type Admin... it must ask me password".
@@ -61,36 +62,24 @@ function loadData() {
         try {
             const data = JSON.parse(fs.readFileSync(DATA_FILE));
             messages = data.messages || [];
-            const loadedSessions = data.sessions || {};
+            sessions = data.sessions || {};
+            removedUsers = data.removedUsers || [];
 
-            // Migration & Initialization: Ensure sessions are keyed by token (userId)
-            sessions = {};
-            Object.values(loadedSessions).forEach(s => {
-                const id = s.token || s.userId; // Migrate from old or use existing
-                if (id) {
-                    s.userId = id;
-                    s.connected = false;
-                    s.socketId = null;
-                    sessions[id] = s;
-                } else if (s.name) {
-                    // Fallback for very old format if necessary
-                    const fallbackId = uuidv4();
-                    s.userId = fallbackId;
-                    s.token = fallbackId;
-                    s.connected = false;
-                    s.socketId = null;
-                    sessions[fallbackId] = s;
-                }
+            // On server restart, all sessions are initially disconnected
+            Object.values(sessions).forEach(s => {
+                s.connected = false;
+                s.socketId = null;
             });
         } catch (e) { console.error(e); }
     }
 }
 function saveData() {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ messages, sessions }, null, 2));
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ messages, sessions, removedUsers }, null, 2));
 }
 function clearData() {
     messages = [];
     sessions = {};
+    removedUsers = [];
     if (fs.existsSync(DATA_FILE)) fs.unlinkSync(DATA_FILE);
 }
 loadData();
@@ -113,62 +102,42 @@ io.on('connection', (socket) => {
     // We only log once the user successfully identifies themselves via 'join_request'
 
 
-    // 1. Join Request
+    // 4. Join Request
     socket.on('join_request', (data) => {
-        // data: { name, password (optional), token (optional), userId (optional) }
-        let { name, password, token, userId } = data;
-        const normalizedName = name ? name.trim() : "";
-        const lowerName = normalizedName.toLowerCase();
-        const effectiveId = userId || token;
+        // data: { name, password (optional), token (optional), userId }
+        let { name, password, userId } = data;
+        if (!userId) {
+            // Safety fallback if client didn't send it, but Step 1/2 says it should.
+            return socket.emit('error_message', 'Identity missing. Please refresh.');
+        }
 
-        console.log(`\n🔍 Login attempt: userId=${effectiveId || 'NEW'}, name="${normalizedName}"`);
+        const normalizedName = name ? name.trim() : null;
+        const lowerName = normalizedName ? normalizedName.toLowerCase() : null;
 
-        // STEP 1 & 2: Identify and Check Removal Status by ID
-        if (effectiveId && sessions[effectiveId]) {
-            const session = sessions[effectiveId];
+        // 4.2 Check Removal Status (MUST COME FIRST)
+        if (removedUsers.includes(userId)) {
+            socket.emit('user_removed', 'You were removed from the previous session');
+            return;
+        }
 
-            if (session.removed) {
-                console.log(`→ classified as REMOVED (by ID) → rejected`);
-                socket.emit('error_message', 'You were removed from the previous session.');
-                socket.emit('clear_token');
-                return;
-            }
+        // 4.3 Restore Returning User
+        if (sessions[userId]) {
+            const session = sessions[userId];
 
-            // STEP 3: Restore Returning User (If allowed)
-            console.log(`→ classified as RETURNING → restored`);
-
-            // Update socket ID
-            const alreadyConnected = session.connected;
+            // Re-bind socket
             session.socketId = socket.id;
             session.connected = true;
 
-            // Update name if provided (Identity-Aware poaching check)
-            if (normalizedName && !session.isAdmin && normalizedName !== session.name) {
-                const lowerNewName = normalizedName.toLowerCase();
-                const isPoached = Object.values(sessions).some(s => s.name.toLowerCase() === lowerNewName && s.userId !== session.userId);
-                const isAdminPoached = lowerNewName === 'admin';
+            // Logging (Verification Step 6)
+            console.log(`User restored/reconnected: ${session.name} (${userId})`);
 
-                if (isPoached || isAdminPoached) {
-                    // Silently ignore poached name update on reconnection to allow entry with old name
-                    console.log(`[Identity ${session.userId}] Poach attempt for "${normalizedName}" blocked - keeping old name.`);
-                } else {
-                    session.name = normalizedName;
-                }
-            }
-
-            // Logging: Logical Rejoin (Offline -> Online)
-            if (!alreadyConnected && (session.approved || session.isAdmin)) {
-                console.log(`👤 Logical Rejoin: ${session.name} [ID: ${session.userId}]`);
-            }
-
-            // If it was the admin
             if (session.isAdmin) adminActive = true;
 
             socket.emit('login_success', {
                 name: session.name,
                 isAdmin: session.isAdmin,
-                token: session.token,
-                userId: session.userId
+                token: session.token, // Keep token for backward compatibility with some client events if needed, but userId is primary
+                userId: userId
             });
             socket.emit('load_messages', messages);
 
@@ -176,74 +145,52 @@ io.on('connection', (socket) => {
                 socket.emit('waiting_approval_with_token', session.token);
             }
 
-            // If admin reconnects, they need requests update
+            // Sync Admin UI if needed
             if (session.isAdmin) {
-                const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin && !s.removed).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
+                const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
                 socket.emit('update_requests', pending);
 
                 const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin, userId: s.userId }));
                 socket.emit('update_members', members);
             }
 
-            io.emit('user_list', getActiveUserNames()); // Update list for mentions
+            io.emit('user_list', getActiveUserNames());
             return;
         }
 
-        // STEP 4: Handle New Joins / Identity Missing
-        // We must still check if the intended NAME is reserved by a REMOVED user
-        const poachedSession = Object.values(sessions).find(s => s.name.toLowerCase() === lowerName);
+        // 4.4 Username Reservation (ONLY NOW)
+        if (!normalizedName) return socket.emit('error_message', 'Name required');
 
-        if (poachedSession) {
-            // Priority Check: If the reserved name was REMOVED, reject with the removal message
-            if (poachedSession.removed) {
-                console.log(`→ classified as REMOVED (by Name match) → rejected`);
-                socket.emit('error_message', 'You were removed from the previous session.');
-                socket.emit('clear_token');
-                return;
-            }
-
-            // Otherwise, it's a standard name reservation block
-            console.log(`→ classified as NAME RESERVED → rejected`);
-            if (poachedSession.connected) {
-                socket.emit('error_message', 'Name is already taken. Please choose another.');
-            } else {
-                socket.emit('error_message', 'Name is unavailable (reserved).');
-            }
+        // Check if name is taken by a DIFFERENT userId
+        const nameTakenByOther = Object.values(sessions).find(s => s.name.toLowerCase() === lowerName && s.userId !== userId);
+        if (nameTakenByOther) {
+            socket.emit('error_message', 'Name reserved');
             return;
         }
 
-        console.log(`→ classified as NEW REQUEST → proceeding`);
-
-        // NEW LOGIN (No ID match, No Name match)
+        // Potential Admin Join
         if (lowerName === 'admin') {
             if (password === 'Wh@tme') {
                 // Password Correct
-                // If Admin already active? 
-                // "There must be only one person with a name".
-                // If Admin session exists and is connected:
-                // Create/Update Admin Session
-                const adminSession = Object.values(sessions).find(s => s.isAdmin);
-                const idToUse = adminSession ? adminSession.userId : uuidv4();
-
-                sessions[idToUse] = {
-                    userId: idToUse,
-                    name: "Admin", // Force proper casing
-                    token: idToUse,
-                    approved: true, // Admin is always approved
+                sessions[userId] = {
+                    userId: userId,
+                    name: "Admin",
+                    token: uuidv4(),
+                    approved: true,
                     isAdmin: true,
                     connected: true,
                     socketId: socket.id
                 };
                 adminActive = true;
-                saveData(); // Persist new admin session
+                saveData();
 
-                console.log(`Admin joined: Admin (${socket.id})`);
+                console.log(`Admin joined: Admin (${userId})`);
 
-                socket.emit('login_success', { name: "Admin", isAdmin: true, token: idToUse, userId: idToUse });
+                socket.emit('login_success', { name: "Admin", isAdmin: true, token: sessions[userId].token, userId: userId });
                 socket.emit('load_messages', messages);
 
                 // Send pending requests to Admin
-                const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin && !s.removed).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
+                const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
                 socket.emit('update_requests', pending);
 
                 io.emit('user_list', getActiveUserNames());
@@ -251,87 +198,70 @@ io.on('connection', (socket) => {
                 if (password) {
                     socket.emit('error_message', 'Invalid Admin Password');
                 }
-                socket.emit('require_password'); // Tell client to ask for password
+                socket.emit('require_password');
             }
             return;
         }
 
-        // Normal User (Already checked for poached/reserved name above)
-        // proceed to create request
-
-        // New Session
-        const id = uuidv4();
-        console.log(`📩 Join Request: ${normalizedName} [Temp ID: ${id}]`);
-        sessions[id] = {
-            userId: id,
+        // New Session for Normal User
+        const newToken = uuidv4();
+        sessions[userId] = {
+            userId: userId,
             name: normalizedName,
-            token: id,
+            token: newToken,
             approved: false,
             isAdmin: false,
             connected: true,
             socketId: socket.id
         };
-        saveData(); // Persist new session request
+        saveData();
 
         // Notify Admin
         const adminSession = Object.values(sessions).find(s => s.isAdmin && s.connected);
         if (adminSession) {
-            // Better: send full list
-            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin && !s.removed).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
+            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
             io.to(adminSession.socketId).emit('update_requests', pending);
-
-            // Also send members just in case but usually only requests change here
-            const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin, userId: s.userId }));
-            io.to(adminSession.socketId).emit('update_members', members);
         }
 
-        socket.emit('waiting_approval_with_token', id); // Client saves token
+        socket.emit('waiting_approval_with_token', newToken);
     });
 
     socket.on('admin_action', (data) => {
-        // Check if sender is admin
         const adminSession = Object.values(sessions).find(s => s.socketId === socket.id && s.isAdmin);
-        if (!adminSession) return;
+        if (adminSession) {
+            const targetUserId = data.userId;
+            const targetSession = sessions[targetUserId];
 
-        const targetId = data.userId || data.name; // userId is primary, name is fallback for transition
-        const targetSession = sessions[targetId] || Object.values(sessions).find(s => s.name === targetId);
+            if (!targetSession) return;
 
-        if (targetSession) {
             if (data.action === 'approve') {
                 targetSession.approved = true;
-                console.log(`✅ First-time Join: ${targetSession.name} [ID: ${targetSession.userId}] (Approved)`);
                 if (targetSession.connected && targetSession.socketId) {
                     io.to(targetSession.socketId).emit('login_success', {
                         name: targetSession.name,
                         isAdmin: false,
-                        token: targetSession.token,
-                        userId: targetSession.userId
+                        userId: targetUserId
                     });
                     io.to(targetSession.socketId).emit('load_messages', messages);
                 }
-                saveData(); // Persist approval state
+                saveData();
             } else if (data.action === 'reject') {
                 if (targetSession.connected && targetSession.socketId) {
                     io.to(targetSession.socketId).emit('access_denied');
-                    io.to(targetSession.socketId).emit('clear_token'); // Tell client to forget token
                 }
-                delete sessions[targetSession.userId];
-            } else if (data.action === 'remove') { // NEW: Remove Member (Persistent)
+                delete sessions[targetUserId];
+                saveData();
+            } else if (data.action === 'remove') {
                 if (targetSession.connected && targetSession.socketId) {
-                    io.to(targetSession.socketId).emit('user_removed');
-                    io.to(targetSession.socketId).emit('clear_token');
+                    io.to(targetSession.socketId).emit('user_removed', 'You were removed from the chat');
                 }
-                targetSession.approved = false;
-                targetSession.connected = false;
-                targetSession.removed = true; // Mark as persistently removed
-                targetSession.socketId = null;
-                saveData(); // Persist removal state
+                delete sessions[targetUserId];
+                removedUsers.push(targetUserId);
+                saveData();
             }
 
-            // Update Admin UI
-            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin && !s.removed).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
-
-            // Send updated lists to Admin
+            // Sync Admin UI
+            const pending = Object.values(sessions).filter(s => !s.approved && !s.isAdmin).map(s => ({ name: s.name, socketId: s.socketId, userId: s.userId }));
             socket.emit('update_requests', pending);
 
             const members = Object.values(sessions).filter(s => s.approved).map(s => ({ name: s.name, isAdmin: s.isAdmin, userId: s.userId }));
@@ -348,8 +278,7 @@ io.on('connection', (socket) => {
         const message = {
             id: Date.now().toString(),
             sender: senderSession.name,
-            senderUserId: senderSession.userId, // Use stable userId for alignment
-            senderId: senderSession.token, // Keep for legacy/deletion logic compatibility
+            senderUserId: senderSession.userId, // Step 5
             text: msgData.text || '',
             file: msgData.file || null,
             replyTo: msgData.replyTo || null,
@@ -366,8 +295,8 @@ io.on('connection', (socket) => {
 
         const msgIndex = messages.findIndex(m => m.id === msgId);
         if (msgIndex !== -1) {
-            // Check based on token (persistent ID)
-            if (messages[msgIndex].senderId === senderSession.token) {
+            // Check based on userId (Step 5/6)
+            if (messages[msgIndex].senderUserId === senderSession.userId) {
                 messages[msgIndex].deleted = true;
                 messages[msgIndex].text = "";
                 messages[msgIndex].file = null;
@@ -399,19 +328,10 @@ io.on('connection', (socket) => {
     socket.on('logout_self', () => {
         const session = Object.values(sessions).find(s => s.socketId === socket.id);
         if (session) {
-            // Remove from sessions so name can be reused and no auto-reconnect
             if (session.isAdmin) adminActive = false;
             delete sessions[session.userId];
-            saveData(); // Persist logout
-
-
-            // Notify Admin if a pending user left? 
-            // Or if active user left, update user list
+            saveData();
             io.emit('user_list', getActiveUserNames());
-
-            // If admin left, maybe just notify? 
-            // Requirements: "Option for admin... 1. logout self".
-            // Implementation: Just delete session.
         }
     });
 
@@ -422,15 +342,10 @@ io.on('connection', (socket) => {
             if (session.socketId === socket.id) {
                 session.connected = false;
                 if (session.isAdmin) adminActive = false;
-
-                // Logical Disconnect Check: Wait a moment to see if it's just a page refresh
-                const closedSocketId = socket.id;
-                setTimeout(() => {
-                    // Only log if the user hasn't re-associated with a NEW socket since
-                    if (!session.connected && (session.approved || session.isAdmin) && session.socketId === closedSocketId) {
-                        console.log(`🚪 Logical Disconnect: ${session.name} [ID: ${session.userId}]`);
-                    }
-                }, 2000);
+                // Only log disconnects for users who were actually approved or admins
+                if (session.approved || session.isAdmin) {
+                    console.log(`User disconnected: ${session.name}`);
+                }
             }
         }
     });
@@ -453,25 +368,19 @@ server.listen(PORT, '0.0.0.0', () => {
     const interfaces = os.networkInterfaces();
     let localIp = 'localhost';
 
-    // Improved IP detection: handles string ('IPv4') and integer (4) family types
     for (let devName in interfaces) {
         let iface = interfaces[devName];
         for (let i = 0; i < iface.length; i++) {
             let alias = iface[i];
-            const isIpv4 = alias.family === 'IPv4' || alias.family === 4;
-            if (isIpv4 && !alias.internal) {
-                // Heuristic: prioritize physical-looking interface names or just take the first one found
-                // Usually we want the one that isn't 'vEthernet' or similar if possible, 
-                // but any non-internal IPv4 is better than localhost.
+            if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
                 localIp = alias.address;
             }
         }
     }
 
-    console.log(`\n🚀 LANChat Server is RUNNING!`);
+    console.log(`\n🚀 Server is RUNNING!`);
     console.log(`-------------------------------------------`);
     console.log(`🏠 On this PC:   http://localhost:${PORT}`);
     console.log(`📱 On Mobile:    http://${localIp}:${PORT}`);
     console.log(`-------------------------------------------\n`);
-    console.log(`[Network] Bound to 0.0.0.0 (All Interfaces)`);
 });
