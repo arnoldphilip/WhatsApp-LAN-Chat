@@ -119,17 +119,23 @@ io.on('connection', (socket) => {
         let { name, password, token, userId } = data;
         const normalizedName = name ? name.trim() : "";
         const lowerName = normalizedName.toLowerCase();
-
-        // RECONNECTION ATTEMPT (Lookup by stable userId)
         const effectiveId = userId || token;
+
+        console.log(`\n🔍 Login attempt: userId=${effectiveId || 'NEW'}, name="${normalizedName}"`);
+
+        // STEP 1 & 2: Identify and Check Removal Status by ID
         if (effectiveId && sessions[effectiveId]) {
             const session = sessions[effectiveId];
 
             if (session.removed) {
+                console.log(`→ classified as REMOVED (by ID) → rejected`);
                 socket.emit('error_message', 'You were removed from the previous session.');
                 socket.emit('clear_token');
                 return;
             }
+
+            // STEP 3: Restore Returning User (If allowed)
+            console.log(`→ classified as RETURNING → restored`);
 
             // Update socket ID
             const alreadyConnected = session.connected;
@@ -144,7 +150,7 @@ io.on('connection', (socket) => {
 
                 if (isPoached || isAdminPoached) {
                     // Silently ignore poached name update on reconnection to allow entry with old name
-                    console.log(`Identity ${session.userId} attempted to poach name "${normalizedName}" - request ignored.`);
+                    console.log(`[Identity ${session.userId}] Poach attempt for "${normalizedName}" blocked - keeping old name.`);
                 } else {
                     session.name = normalizedName;
                 }
@@ -161,13 +167,13 @@ io.on('connection', (socket) => {
             socket.emit('login_success', {
                 name: session.name,
                 isAdmin: session.isAdmin,
-                token: token,
+                token: session.token,
                 userId: session.userId
             });
             socket.emit('load_messages', messages);
 
             if (!session.approved) {
-                socket.emit('waiting_approval_with_token', token);
+                socket.emit('waiting_approval_with_token', session.token);
             }
 
             // If admin reconnects, they need requests update
@@ -183,14 +189,32 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // NEW LOGIN
+        // STEP 4: Handle New Joins / Identity Missing
+        // We must still check if the intended NAME is reserved by a REMOVED user
+        const poachedSession = Object.values(sessions).find(s => s.name.toLowerCase() === lowerName);
 
-        // Check if name is taken (and currently connected or reserved)
-        // If "Admin" is taken but disconnected, we might allow reclaim if password matches (handled above if token mechanism used).
-        // If user tries to login as "Admin" without token (new device), prompt password.
+        if (poachedSession) {
+            // Priority Check: If the reserved name was REMOVED, reject with the removal message
+            if (poachedSession.removed) {
+                console.log(`→ classified as REMOVED (by Name match) → rejected`);
+                socket.emit('error_message', 'You were removed from the previous session.');
+                socket.emit('clear_token');
+                return;
+            }
 
+            // Otherwise, it's a standard name reservation block
+            console.log(`→ classified as NAME RESERVED → rejected`);
+            if (poachedSession.connected) {
+                socket.emit('error_message', 'Name is already taken. Please choose another.');
+            } else {
+                socket.emit('error_message', 'Name is unavailable (reserved).');
+            }
+            return;
+        }
 
+        console.log(`→ classified as NEW REQUEST → proceeding`);
 
+        // NEW LOGIN (No ID match, No Name match)
         if (lowerName === 'admin') {
             if (password === 'Wh@tme') {
                 // Password Correct
@@ -232,17 +256,8 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Normal User
-        // Check duplicate name (Identity-Aware Reservation)
-        const poachedSession = Object.values(sessions).find(s => s.name.toLowerCase() === lowerName);
-        if (poachedSession && poachedSession.userId !== effectiveId) {
-            if (poachedSession.connected) {
-                socket.emit('error_message', 'Name is already taken. Please choose another.');
-            } else {
-                socket.emit('error_message', 'Name is unavailable (reserved).');
-            }
-            return;
-        }
+        // Normal User (Already checked for poached/reserved name above)
+        // proceed to create request
 
         // New Session
         const id = uuidv4();
