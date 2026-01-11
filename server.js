@@ -130,9 +130,18 @@ io.on('connection', (socket) => {
             session.socketId = socket.id;
             session.connected = true;
 
-            // Update name if provided (editable display name)
-            if (normalizedName && !session.isAdmin) {
-                session.name = normalizedName;
+            // Update name if provided (Identity-Aware poaching check)
+            if (normalizedName && !session.isAdmin && normalizedName !== session.name) {
+                const lowerNewName = normalizedName.toLowerCase();
+                const isPoached = Object.values(sessions).some(s => s.name.toLowerCase() === lowerNewName && s.userId !== session.userId);
+                const isAdminPoached = lowerNewName === 'admin';
+
+                if (isPoached || isAdminPoached) {
+                    // Silently ignore poached name update on reconnection to allow entry with old name
+                    console.log(`Identity ${session.userId} attempted to poach name "${normalizedName}" - request ignored.`);
+                } else {
+                    session.name = normalizedName;
+                }
             }
 
             // Logging: Only log reconnects if they were actually offline
@@ -218,18 +227,14 @@ io.on('connection', (socket) => {
         }
 
         // Normal User
-        // Check duplicate name
-        // Case-insensitive check
-        const existingUser = Object.keys(sessions).find(key => key.toLowerCase() === lowerName);
-        if (existingUser) {
-            const session = sessions[existingUser];
-            if (session.connected) {
+        // Check duplicate name (Identity-Aware Reservation)
+        const poachedSession = Object.values(sessions).find(s => s.name.toLowerCase() === lowerName);
+        if (poachedSession && poachedSession.userId !== effectiveId) {
+            if (poachedSession.connected) {
                 socket.emit('error_message', 'Name is already taken. Please choose another.');
-                return;
+            } else {
+                socket.emit('error_message', 'Name is unavailable (reserved).');
             }
-            // If disconnected, allow reclaim? 
-            // Without token, we shouldn't allow reclaim easily as it invites identity theft.
-            socket.emit('error_message', 'Name is unavailable (reserved).');
             return;
         }
 
